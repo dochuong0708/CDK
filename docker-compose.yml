@@ -1,0 +1,16 @@
+services:
+  backend:
+    build: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports: ['8000:8000']
+    environment:
+      DEEPGUARD_DB_PATH: /app/data/deepguard.db
+      DEEPGUARD_UPLOAD_DIR: /app/data/uploads
+    volumes: ['./data:/app/data']
+  frontend:
+    image: node:24-alpine
+    working_dir: /app
+    command: npm run dev -- --host 0.0.0.0
+    ports: ['5173:5173']
+    volumes: ['./frontend:/app']
+    depends_on: [backend]

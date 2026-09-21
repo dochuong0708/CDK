@@ -1,0 +1,93 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "detection-api: install dependencies",
+      "type": "shell",
+      "command": "python -m pip install -r requirements.txt",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "runOptions": { "instanceLimit": 1, "instancePolicy": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "detection-api: apply migrations",
+      "type": "shell",
+      "command": "python -c \"import sqlite3; from pathlib import Path; db = Path('data/deepguard.db'); db.parent.mkdir(parents=True, exist_ok=True); conn = sqlite3.connect(db); conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)'); applied = {row[0] for row in conn.execute('SELECT version FROM schema_migrations')}; migrations = sorted(Path('migrations').glob('*.sql'));\nfor migration in migrations:\n    if migration.name in applied: continue\n    conn.executescript(migration.read_text(encoding='utf-8')); conn.execute('INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime(\'now\'))', (migration.name,)); conn.commit(); conn.close()\"",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "runOptions": { "instanceLimit": 1, "instancePolicy": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "detection-api: start backend",
+      "type": "shell",
+      "command": "python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend",
+        "DEEPGUARD_DB_PATH": "${workspaceFolder}/data/deepguard.db",
+        "DEEPGUARD_UPLOAD_DIR": "${workspaceFolder}/data/uploads"
+      },
+      "isBackground": true,
+      "runOptions": { "instanceLimit": 1, "instancePolicy": "silent" },
+      "problemMatcher": {
+        "owner": "python",
+        "severity": "info",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": ".*Application startup complete.*|.*Uvicorn running.*"
+        }
+      },
+      "dependsOn": [
+        "detection-api: install dependencies",
+        "detection-api: apply migrations"
+      ]
+    },
+    {
+      "label": "deepguard-dashboard: npm install",
+      "type": "shell",
+      "command": "npm install",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "runOptions": { "instanceLimit": 1, "instancePolicy": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "deepguard-dashboard: start dev server",
+      "type": "shell",
+      "command": "npm run dev -- --host 127.0.0.1 --port 5173",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "isBackground": true,
+      "runOptions": { "instanceLimit": 1, "instancePolicy": "silent" },
+      "problemMatcher": {
+        "owner": "vite",
+        "severity": "info",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:"
+        }
+      },
+      "dependsOn": [
+        "deepguard-dashboard: npm install"
+      ]
+    },
+    {
+      "label": "Debug All Services",
+      "dependsOn": [
+        "detection-api: start backend",
+        "deepguard-dashboard: start dev server"
+      ],
+      "dependsOrder": "sequence",
+      "runOptions": { "instanceLimit": 1, "instancePolicy": "silent" },
+      "problemMatcher": []
+    }
+  ]
+}

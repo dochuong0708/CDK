@@ -1,0 +1,1 @@
+{"IsEncrypted":false,"Values":{"FUNCTIONS_WORKER_RUNTIME":"python","AZURE_FUNCTIONS_ENVIRONMENT":"Development","DEEPGUARD_DB_PATH":"./data/deepguard.db","DEEPGUARD_UPLOAD_DIR":"./data/uploads"}}

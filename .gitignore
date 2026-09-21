@@ -1,0 +1,11 @@
+node_modules/
+frontend/dist/
+backend/__pycache__/
+backend/.pytest_cache/
+.venv/
+.env
+*.pyc
+data/*.db
+data/uploads/*
+!data/uploads/.gitkeep
+.copilot-azure/
