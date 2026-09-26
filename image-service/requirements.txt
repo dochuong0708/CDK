@@ -1,0 +1,8 @@
+decord
+gradio
+numpy
+opencv-python-headless
+pillow
+torch
+torchvision
+transformers

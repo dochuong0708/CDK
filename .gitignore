@@ -9,3 +9,4 @@ data/*.db
 data/uploads/*
 !data/uploads/.gitkeep
 .copilot-azure/
+data/
