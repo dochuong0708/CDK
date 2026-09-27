@@ -9,3 +9,7 @@ data/*.db
 data/uploads/*
 !data/uploads/.gitkeep
 .copilot-azure/
+backend/models/
+backend/outputs/
+data/audio/
+__pycache__/

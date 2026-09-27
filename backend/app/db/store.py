@@ -12,6 +12,8 @@ class AnalysisStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(self.path, check_same_thread=False)
         apply_migrations(self.connection, Path(__file__).parents[2] / 'migrations')
+        self.connection.execute('CREATE TABLE IF NOT EXISTS audio_details (analysis_id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
+        self.connection.commit()
 
     def add(self, item: Analysis) -> Analysis:
         self.connection.execute(
@@ -30,6 +32,9 @@ class AnalysisStore:
                 item.createdAt.isoformat(),
             ),
         )
+        if item.audio is not None:
+            self.connection.execute('INSERT INTO audio_details VALUES (?, ?)',
+                                    (item.analysisId, json.dumps(item.audio)))
         self.connection.commit()
         return item
 
@@ -49,7 +54,13 @@ class AnalysisStore:
         row = self.connection.execute(
             'SELECT * FROM analyses WHERE analysis_id = ?', (analysis_id,)
         ).fetchone()
-        return self._from_row(row) if row else None
+        if not row:
+            return None
+        item = self._from_row(row)
+        detail = self.connection.execute('SELECT payload FROM audio_details WHERE analysis_id = ?', (analysis_id,)).fetchone()
+        if detail:
+            item.audio = json.loads(detail[0])
+        return item
 
     @staticmethod
     def _from_row(row: tuple) -> Analysis:

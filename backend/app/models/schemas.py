@@ -16,6 +16,7 @@ class AnalysisResult(BaseModel):
 class Analysis(AnalysisResult):
     input: str
     createdAt: datetime
+    audio: dict | None = None
 class AnalysisList(BaseModel):
     items: list[Analysis]
     total: int

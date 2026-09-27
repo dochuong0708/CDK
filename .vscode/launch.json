@@ -23,6 +23,34 @@
       "url": "http://127.0.0.1:5173",
       "webRoot": "${workspaceFolder}/frontend",
       "preLaunchTask": "deepguard-dashboard: start dev server"
+    },
+    {
+      "name": "Audio: ASVspoof demo (train + XAI)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/backend/run_audio_demo.py",
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONUTF8": "1",
+        "MPLCONFIGDIR": "${workspaceFolder}/backend/outputs/mpl-cache"
+      }
+    },
+    {
+      "name": "Audio: API with latest demo model",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/backend/serve_audio_demo.py",
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONUTF8": "1",
+        "MPLCONFIGDIR": "${workspaceFolder}/backend/outputs/mpl-cache"
+      }
     }
   ],
   "compounds": [

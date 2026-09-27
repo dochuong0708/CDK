@@ -1,5 +1,11 @@
 DeepGuard
 
+Mô-đun giọng nói thật/giả và XAI: xem [hướng dẫn Audio](docs/AUDIO.md) để chuẩn bị dữ liệu, huấn luyện CNN, đánh giá và chạy giao diện. Cần checkpoint đã huấn luyện; bản mã nguồn không kèm trọng số phát hiện deepfake.
+
+Chạy với dữ liệu ASVspoof: [hướng dẫn từng bước trên Windows](docs/ASVSPOOF.md), gồm chuẩn bị ASVspoof 2019 LA, kiểm tra dữ liệu, chạy thử nhỏ, huấn luyện đầy đủ và xuất XAI.
+
+Chạy thử trong Visual Studio Code: [hướng dẫn F5 và giao diện web](docs/VSCODE_AUDIO.md). Chọn cấu hình `Audio: ASVspoof demo (train + XAI)` để chạy toàn bộ demo.
+
 Mục tiêu dự án
 
 DeepGuard là một hệ thống giám sát và phát hiện nội dung giả mạo hoặc có dấu hiệu nguy hiểm dựa trên ba loại đầu vào chính: hình ảnh, âm thanh và ngôn ngữ. Mục tiêu là xây dựng một sản phẩm dạng dashboard đơn giản, cho phép người dùng upload hoặc nhập dữ liệu, hệ thống đánh giá mức độ nghi ngờ và trả về kết quả theo từng mô-đun.
