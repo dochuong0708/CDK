@@ -2,6 +2,9 @@ node_modules/
 frontend/dist/
 backend/__pycache__/
 backend/.pytest_cache/
+backend/data/models/*.joblib
+/data/language/*
+!/data/language/.gitkeep
 .venv/
 .env
 *.pyc
