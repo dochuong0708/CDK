@@ -1,6 +1,6 @@
 node_modules/
 frontend/dist/
-backend/__pycache__/
+__pycache__/
 backend/.pytest_cache/
 backend/data/models/*.joblib
 /data/language/*
