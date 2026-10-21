@@ -114,8 +114,11 @@ python -m app.agent.cli
 - `backend/app/services/article_analyzer.py`: Phân đoạn bài báo, điều phối mô hình NLP, luật ngôn ngữ và fact-checking.
 - `backend/app/detectors/language/`:
   - `model.py`: Nạp mô hình học máy (`vietnam_fake_news_risk_v3.joblib`).
-  - `heuristics.py`: Bộ quy tắc phát hiện từ ngữ giật gân, câu view, thuyết âm mưu, lừa đảo.
-- `backend/app/services/fact_checking.py`: Tìm kiếm và đối chiếu sự thật với báo chí chính thống.
+  - `heuristics.py`: Bộ quy tắc tách tín hiệu hình thức (giật gân, câu view, thuyết âm mưu) và lừa đảo.
+  - `domains.py`: Phát hiện tên miền giả mạo ngân hàng/ví bằng Levenshtein + chuẩn hóa ký tự dễ nhầm.
+  - `style_classifier.py`: Phân loại giật gân/lừa đảo theo ngữ cảnh bằng embedding tiếng Việt (tùy chọn, `requirements-ml.txt`).
+- `backend/app/services/risk_fusion.py`: Tách và kết hợp 3 trục rủi ro: Hình thức (style), Lừa đảo (fraud), Sự thật (factuality).
+- `backend/app/services/fact_checking.py`: RAG fact-check: tìm kiếm, xếp hạng snippet bằng cosine similarity, LLM đánh giá; báo cáo lưu vào SQLite (`/api/fact-checks`).
 - `backend/data/models/`: Chứa các mô hình học máy đã huấn luyện.
 - `backend/tests/`: Bộ kiểm thử tự động pytest.
 

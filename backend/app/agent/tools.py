@@ -100,7 +100,8 @@ class DeepGuardTools:
                 return self._save(self.orchestrator.analyze_text(request.text))
             if name == "fact_check_text":
                 request = FactCheckRequest(text=arguments.get("text", ""))
-                return self.fact_checker.check(request.text).model_dump(mode="json")
+                report = self.store.add_fact_check(self.fact_checker.check(request.text), request.text)
+                return report.model_dump(mode="json")
             if name == "analyze_media":
                 return self._analyze_media(arguments)
             if name == "list_analyses":

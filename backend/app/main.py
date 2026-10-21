@@ -1,11 +1,13 @@
 import os
 from pathlib import Path
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
 from app.api.routes.health import router as health_router
 from app.db.store import AnalysisStore
-from app.models.fact_checking import FactCheckReport, FactCheckRequest
+from app.models.fact_checking import FactCheckList, FactCheckReport, FactCheckRequest
 from app.models.schemas import AnalysisList, Modality, TextRequest
 from app.services.article_analyzer import ArticleAnalyzer
 from app.services.fact_checking import FactChecker
@@ -26,7 +28,7 @@ app.include_router(health_router)
 store = AnalysisStore(os.getenv('DEEPGUARD_DB_PATH', './data/deepguard.db'))
 orchestrator = DetectorOrchestrator()
 fact_checker = FactChecker()
-article_analyzer = ArticleAnalyzer(fact_checker=fact_checker)
+article_analyzer = ArticleAnalyzer(fact_checker=fact_checker, store=store)
 upload_dir = Path(os.getenv('DEEPGUARD_UPLOAD_DIR', './data/uploads'))
 upload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -54,13 +56,38 @@ def analyze_article(request: ArticleRequest):
 @app.post('/api/fact-check/text', response_model=FactCheckReport)
 def fact_check_text(request: FactCheckRequest):
     try:
-        return fact_checker.check(request.text)
+        report = fact_checker.check(request.text)
     except RuntimeError as error:
         raise HTTPException(502, str(error)) from error
+    return store.add_fact_check(report, request.text)
+
+
+@app.get('/api/fact-checks', response_model=FactCheckList)
+def fact_checks(limit: int = 50):
+    items = store.list_fact_checks(limit)
+    return {'items': items, 'total': len(items)}
+
+
+@app.get('/api/fact-checks/{report_id}', response_model=FactCheckReport)
+def fact_check(report_id: str):
+    report = store.get_fact_check(report_id)
+    if not report:
+        raise HTTPException(404, 'Không tìm thấy báo cáo kiểm chứng')
+    return report
+
 
 @app.post('/api/analyze/text')
 def analyze_text(request: TextRequest):
-    result = orchestrator.analyze_text(request.text)
+    report: FactCheckReport | None = None
+    fact_check_error: str | None = None
+    if request.check_facts:
+        try:
+            report = store.add_fact_check(fact_checker.check(request.text), request.text)
+        except (RuntimeError, ValueError) as error:
+            fact_check_error = str(error)
+    result = orchestrator.analyze_text(request.text, fact_report=report)
+    if fact_check_error:
+        result.evidence.append(f"Không thể fact-check: {fact_check_error}")
     return store.add(result)
 
 @app.post('/api/analyze/media')

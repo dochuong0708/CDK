@@ -29,7 +29,7 @@ def test_normal_message_is_safe_without_model():
 
     assert result.label == "SAFE"
     assert result.riskScore == 0
-    assert result.detector == "text-rules-v1"
+    assert result.detector == "text-rules-v2"
 
 
 def test_single_urgent_request_is_suspicious():

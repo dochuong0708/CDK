@@ -37,6 +37,9 @@ import type { SampleMediaItem } from './sampleData'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
+const riskColor = (score: number | null) =>
+  score === null ? '#94a3b8' : score >= 65 ? '#ef4444' : score >= 35 ? '#f59e0b' : '#10b981'
+
 export const App: React.FC = () => {
   // App Mode: 'text' | 'image' | 'audio'
   const [appMode, setAppMode] = useState<AppMode>('text')
@@ -572,6 +575,19 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                   <p className="gauge-caption">
                     Độ tin cậy: <strong style={{ color: '#fff' }}>{result.summary.credibility_score}%</strong>
                   </p>
+                  <p className="gauge-caption" title="Rủi ro hình thức: giật gân, nặc danh, kêu gọi lan truyền">
+                    Hình thức: <strong style={{ color: riskColor(result.summary.style_risk_score) }}>
+                      {result.summary.style_risk_score}%
+                    </strong>
+                  </p>
+                  <p className="gauge-caption" title="Rủi ro sai sự thật: mô hình tin giả + fact-check RAG">
+                    Sự thật:{' '}
+                    <strong style={{ color: riskColor(result.summary.factuality_risk_score) }}>
+                      {result.summary.factuality_risk_score === null
+                        ? 'Chưa xác minh'
+                        : `${result.summary.factuality_risk_score}%`}
+                    </strong>
+                  </p>
                 </div>
 
                 {/* Verdict text and stats */}
@@ -775,11 +791,10 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                                 <strong style={{ color: '#fff' }}>{paragraph.risk_score}%</strong>
                               </div>
 
-                              {paragraph.model_score !== null && (
-                                <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                                  AI: {(paragraph.model_score * 100).toFixed(0)}%
-                                </span>
-                              )}
+                              <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                                Hình thức: {paragraph.style_risk}% · Sự thật:{' '}
+                                {paragraph.factuality_risk === null ? 'chưa xác minh' : `${paragraph.factuality_risk}%`}
+                              </span>
                             </div>
                           </div>
 

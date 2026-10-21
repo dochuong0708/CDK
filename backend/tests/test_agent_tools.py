@@ -35,6 +35,7 @@ class FakeOrchestrator:
 class FakeStore:
     def __init__(self) -> None:
         self.items: list[Analysis] = []
+        self.fact_checks: list = []
 
     def add(self, item: Analysis) -> Analysis:
         self.items.append(item)
@@ -50,6 +51,11 @@ class FakeStore:
 
     def get(self, analysis_id: str) -> Analysis | None:
         return next((item for item in self.items if item.analysisId == analysis_id), None)
+
+    def add_fact_check(self, report, input_text):
+        saved = report.model_copy(update={"reportId": f"fc-{len(self.fact_checks) + 1}"})
+        self.fact_checks.append(saved)
+        return saved
 
 
 def make_tools() -> tuple[DeepGuardTools, FakeStore]:

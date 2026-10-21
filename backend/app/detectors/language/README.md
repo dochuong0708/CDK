@@ -3,9 +3,27 @@ Mô-đun phát hiện rủi ro ngôn ngữ
 Luồng xử lý
 
 1. preprocessing.py chuẩn hóa Unicode về NFC, loại bỏ ký tự điều khiển, gom khoảng trắng, nhận diện URL, số điện thoại, chuỗi giống số tài khoản và tách từ tiếng Việt bằng PyVi. Nếu tokenizer chưa cài đặt, mô-đun dùng tách từ theo khoảng trắng.
-2. heuristics.py áp dụng regex và danh sách miền rút gọn/ngân hàng để tạo điểm luật và bằng chứng.
-3. model.py nạp mô hình joblib tùy chọn. Model phải hỗ trợ predict_proba hoặc decision_function. Không có model thì hệ thống chỉ dùng luật, không giả vờ rằng đã chạy AI.
-4. detector.py kết hợp điểm: S_final = max(S_rule, S_model), chuyển sang riskScore 0-100 và phân loại SAFE, SUSPICIOUS, DANGEROUS.
+2. heuristics.py áp dụng regex và tách tín hiệu thành hai nhóm: style (giật gân, nặc danh, thuyết âm mưu, kêu gọi lan truyền) và fraud (khẩn cấp, đe dọa, đòi OTP/mật khẩu/chuyển tiền, URL lừa đảo).
+3. domains.py phát hiện tên miền giả mạo thương hiệu (vietcombankk.com, v1etcombank.com, teckcombank.vn) bằng Levenshtein distance và chuẩn hóa ký tự dễ nhầm (1→i, 0→o, rn→m, vv→w). Tên miền chính thức và subdomain của chúng không bị gắn cờ.
+4. style_classifier.py dùng embedding tiếng Việt (mặc định bkai-foundation-models/vietnamese-bi-encoder) so khớp câu với các câu mẫu giật gân/lừa đảo/trung tính để nhận diện theo ngữ cảnh, bổ sung cho regex. Không có sentence-transformers thì bỏ qua bước này.
+5. model.py nạp mô hình joblib tùy chọn (phân loại tin giả). Không có model thì hệ thống không giả vờ đã chạy AI.
+6. services/risk_fusion.py kết hợp thành các trục độc lập:
+   - styleRisk = noisy-OR(luật style, embedding giật gân)
+   - fraudRisk = noisy-OR(luật fraud, embedding lừa đảo)
+   - factualityRisk = model tin giả kết hợp kết quả fact-check RAG (trọng số theo độ tin cậy của báo cáo); null nếu chưa có tín hiệu nào.
+   - Điểm tổng: max(fraudRisk, factualityRisk, 0.35·style + 0.65·factuality). Style một mình không thể đẩy bài viết lên DANGEROUS, nên bài đúng sự thật nhưng tiêu đề giật gân nhẹ vẫn được giữ ở mức thấp, trong khi bài viết bình thường nhưng bị fact-check bác bỏ vẫn bị đánh dấu nguy hiểm.
+
+Cấu hình embedding
+
+- Cài: python -m pip install -r backend/requirements-ml.txt (tải model từ Hugging Face ở lần chạy đầu).
+- DEEPGUARD_EMBEDDING_MODEL: tên model sentence-transformers khác, hoặc off để tắt (test dùng off).
+- Khi không có model ngữ nghĩa, RAG dùng TF-IDF character n-gram để tính cosine similarity.
+
+Fact-check (RAG)
+
+- Trích xuất claim, tìm kiếm web (DuckDuckGo/Bing), xếp hạng snippet theo cosine similarity với claim, rồi mới đưa cho LLM đánh giá. Nguồn có độ tương đồng thấp bị hạ từ supports/contradicts xuống context, tránh LLM kết luận dựa trên kết quả không liên quan.
+- Mỗi báo cáo được lưu vào bảng fact_checks (SQLite, migration 002) và trả về reportId. Xem lại qua GET /api/fact-checks và GET /api/fact-checks/{id}.
+- POST /api/analyze/text với check_facts=true sẽ chạy fact-check và gộp factualityRisk vào kết quả phân tích; analyses lưu factCheckId để liên kết.
 
 Ngưỡng nhãn
 
@@ -56,7 +74,7 @@ Hiện repo chưa có bộ dữ liệu gán nhãn hay model đã huấn luyện.
 
 Lưu ý giới hạn
 
-- Danh sách tên miền hợp lệ trong heuristics.py chỉ là ví dụ, có thể lỗi thời và không chứng minh một website an toàn.
+- Danh sách tên miền hợp lệ trong domains.py chỉ là ví dụ, có thể lỗi thời và không chứng minh một website an toàn.
 - URL rút gọn không đồng nghĩa chắc chắn là lừa đảo; nó chỉ là tín hiệu rủi ro.
 - Không gửi OTP, mật khẩu hoặc dữ liệu tài khoản thật để thử nghiệm.
 - Kết quả là tín hiệu tham khảo, không phải kết luận pháp lý hay xác minh danh tính.

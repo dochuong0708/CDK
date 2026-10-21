@@ -24,7 +24,10 @@ export interface FactCheckEvidence {
   published_at?: string
   stance: 'supports' | 'contradicts' | 'context' | 'irrelevant'
   priority_publisher: boolean
+  similarity?: number | null
 }
+
+export type FactualityLabel = RiskLabel | 'UNVERIFIED'
 
 export interface ClaimItem {
   claim: string
@@ -42,6 +45,11 @@ export interface ParagraphAnalysis {
   label: RiskLabel
   model_score: number | null
   rule_score: number
+  style_risk: number
+  style_label: RiskLabel
+  fraud_risk: number
+  factuality_risk: number | null
+  factuality_label: FactualityLabel
   suspicious_phrases: SuspiciousPhrase[]
   issues: string[]
   claims: Array<{
@@ -57,6 +65,11 @@ export interface ArticleSummary {
   label: RiskLabel
   verdict_title: string
   conclusion: string
+  style_risk_score: number
+  style_label: RiskLabel
+  fraud_risk_score: number
+  factuality_risk_score: number | null
+  factuality_label: FactualityLabel
   stats: {
     total_paragraphs: number
     dangerous_paragraphs: number
@@ -76,6 +89,7 @@ export interface ArticleAnalysisResponse {
   paragraphs: ParagraphAnalysis[]
   claims: ClaimItem[]
   fact_check_error?: string | null
+  fact_check_report_id?: string | null
   recommendations: string[]
 }
 

@@ -1,10 +1,10 @@
 import json
 import os
 import re
+import xml.etree.ElementTree as ET
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
-import xml.etree.ElementTree as ET
 
 from pydantic import BaseModel, Field
 
@@ -14,7 +14,7 @@ from app.models.fact_checking import (
     FactCheckReport,
     FactCheckVerdict,
 )
-
+from app.nlp.embeddings import Embedder, get_embedder, similarities
 
 MAX_CLAIMS = 5
 MAX_RESULTS_PER_CLAIM = 3
@@ -58,6 +58,11 @@ PRIORITY_SEARCH_ORDER = (
     "vietnamplus.vn",
     "nhandan.vn",
 )
+# Ngưỡng cosine tối thiểu để một snippet được phép hỗ trợ/bác bỏ luận điểm (RAG gating).
+RELEVANCE_THRESHOLDS = {"tfidf-char-ngram": 0.2}
+DEFAULT_RELEVANCE_THRESHOLD = 0.5
+VERDICT_RISK = {"supported": 0.0, "mixed": 0.6, "contradicted": 1.0}
+LLM_CONFIDENCE_WEIGHT = 0.5
 
 
 class ExtractedClaim(BaseModel):
@@ -216,11 +221,48 @@ class FallbackNewsSearchProvider:
         return self.fallback.search(query, limit)
 
 
+def factuality_from_claims(claims: list[ClaimFactCheck]) -> tuple[float | None, float]:
+    """Rủi ro sai sự thật (0-1) và độ chắc chắn, chỉ tính trên luận điểm có kết luận rõ."""
+    decisive = [claim for claim in claims if claim.verdict in VERDICT_RISK]
+    if not decisive:
+        return None, 0.0
+    weights = [max(claim.confidence, 0.05) for claim in decisive]
+    risk = sum(VERDICT_RISK[claim.verdict] * weight for claim, weight in zip(decisive, weights))
+    coverage = len(decisive) / len(claims)
+    confidence = sum(claim.confidence for claim in decisive) / len(decisive) * coverage
+    return round(risk / sum(weights), 3), round(confidence, 3)
+
+
 class FactChecker:
-    def __init__(self, client: Any | None = None, searcher: Any | None = None, model: str | None = None):
+    def __init__(
+        self,
+        client: Any | None = None,
+        searcher: Any | None = None,
+        model: str | None = None,
+        embedder: Embedder | None = None,
+    ):
         self.client = client
         self.searcher = searcher or FallbackNewsSearchProvider()
         self.model = model or os.getenv("DEEPGUARD_AGENT_MODEL", "qwen2.5:3b")
+        self._embedder = embedder
+
+    @property
+    def embedder(self) -> Embedder:
+        if self._embedder is None:
+            self._embedder = get_embedder()
+        return self._embedder
+
+    @property
+    def relevance_threshold(self) -> float:
+        return RELEVANCE_THRESHOLDS.get(self.embedder.name, DEFAULT_RELEVANCE_THRESHOLD)
+
+    def _rank_sources(self, claim: str, sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        scores = similarities(
+            claim, [f"{source['title']}. {source['snippet']}" for source in sources], self.embedder
+        )
+        ranked = [{**source, "similarity": round(score, 3)} for source, score in zip(sources, scores)]
+        ranked.sort(key=lambda source: source["similarity"], reverse=True)
+        return ranked
 
     def check(self, text: str) -> FactCheckReport:
         if not text.strip():
@@ -242,11 +284,14 @@ Nếu không có luận điểm kiểm chứng được, trả danh sách rỗng
             return FactCheckReport(
                 summary="Không tìm thấy luận điểm thực tế rõ ràng để kiểm chứng.",
                 claims=[],
+                retrieval_backend=self.embedder.name,
             )
 
         results: list[ClaimFactCheck] = []
         for claim in claims:
             sources = self.searcher.search(claim.search_query, limit=MAX_RESULTS_PER_CLAIM)
+            if sources:
+                sources = self._rank_sources(claim.claim, sources)
             if not sources:
                 results.append(
                     ClaimFactCheck(
@@ -291,8 +336,9 @@ Nếu không có luận điểm kiểm chứng được, trả danh sách rỗng
                 classified_sources.add(finding.source_index)
                 source = sources[finding.source_index]
                 stance = finding.stance
-                if stance in {"supports", "contradicts"} and not _has_claim_details(
-                    claim.claim, source
+                if stance in {"supports", "contradicts"} and (
+                    not _has_claim_details(claim.claim, source)
+                    or source["similarity"] < self.relevance_threshold
                 ):
                     stance = "context"
                 evidence.append(
@@ -323,7 +369,19 @@ Nếu không có luận điểm kiểm chứng được, trả danh sách rỗng
                 verdict = "contradicted"
             else:
                 verdict = "insufficient_evidence"
-            confidence = assessment.confidence
+            decisive_similarity = max(
+                (
+                    source.similarity or 0.0
+                    for source in evidence
+                    if source.stance in {"supports", "contradicts"}
+                ),
+                default=0.0,
+            )
+            confidence = round(
+                LLM_CONFIDENCE_WEIGHT * assessment.confidence
+                + (1 - LLM_CONFIDENCE_WEIGHT) * decisive_similarity,
+                3,
+            )
             if has_support and has_contradiction:
                 explanation = "Có snippet hỗ trợ và cũng có snippet mâu thuẫn với luận điểm."
             elif has_support:
@@ -369,7 +427,14 @@ Nếu không có luận điểm kiểm chứng được, trả danh sách rỗng
             f"{counts['contradicted']} bị mâu thuẫn, {counts['mixed']} đúng một phần, "
             f"{counts['insufficient_evidence']} chưa đủ bằng chứng."
         )
-        return FactCheckReport(summary=summary, claims=results)
+        factuality_risk, factuality_confidence = factuality_from_claims(results)
+        return FactCheckReport(
+            summary=summary,
+            claims=results,
+            factuality_risk=factuality_risk,
+            factuality_confidence=factuality_confidence,
+            retrieval_backend=self.embedder.name,
+        )
 
     def _assess_claim(self, claim: ExtractedClaim, sources: list[dict[str, str]]) -> ClaimAssessment:
         source_payload = [

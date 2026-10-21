@@ -2,11 +2,21 @@ import re
 from typing import Any
 from uuid import uuid4
 
-from app.detectors.language.heuristics import find_suspicious_phrases, inspect_rules
+from app.detectors.language.heuristics import find_suspicious_phrases, inspect_rules_detailed
 from app.detectors.language.model import LanguageModel
 from app.detectors.language.preprocessing import preprocess_text
+from app.detectors.language.style_classifier import EmbeddingStyleClassifier
 from app.models.fact_checking import FactCheckReport
 from app.services.fact_checking import FactChecker
+from app.services.risk_fusion import (
+    combine_factuality,
+    fuse,
+    noisy_or,
+    report_factuality,
+    risk_label,
+)
+
+CONTRADICTED_CLAIM_RISK = 0.9
 
 
 class ArticleAnalyzer:
@@ -14,9 +24,13 @@ class ArticleAnalyzer:
         self,
         model: LanguageModel | None = None,
         fact_checker: FactChecker | None = None,
+        store: Any | None = None,
+        style_classifier: EmbeddingStyleClassifier | None = None,
     ):
         self.model = model or LanguageModel()
         self.fact_checker = fact_checker or FactChecker()
+        self.store = store
+        self.style_classifier = style_classifier or EmbeddingStyleClassifier()
 
     def split_into_paragraphs(self, text: str) -> list[str]:
         raw_paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\r\n\s*\r\n", text) if p.strip()]
@@ -63,46 +77,38 @@ class ArticleAnalyzer:
         paragraphs_raw = self.split_into_paragraphs(cleaned_text)
         paragraph_analyses: list[dict[str, Any]] = []
 
-        total_risk_sum = 0.0
-        max_risk = 0.0
-
         for idx, p_text in enumerate(paragraphs_raw, start=1):
             preprocessed = preprocess_text(p_text)
-            rule_score, rule_evidence = inspect_rules(preprocessed)
+            rules = inspect_rules_detailed(preprocessed)
             suspicious_phrases = find_suspicious_phrases(p_text)
-
+            style_prediction = self.style_classifier.predict(str(preprocessed["text"]))
             model_score = self.model.predict_score(str(preprocessed["text"]))
-            effective_model_score = model_score if model_score is not None else 0.0
 
-            # Điểm rủi ro kết hợp
-            combined_risk = max(rule_score, effective_model_score)
-            risk_percent = round(combined_risk * 100)
+            style_risk = noisy_or(
+                rules.style_score, style_prediction.sensational if style_prediction else None
+            )
+            fraud_risk = noisy_or(
+                rules.fraud_score, style_prediction.scam if style_prediction else None
+            )
 
-            if risk_percent >= 65:
-                label = "DANGEROUS"
-            elif risk_percent >= 35:
-                label = "SUSPICIOUS"
-            else:
-                label = "SAFE"
-
-            total_risk_sum += risk_percent
-            if risk_percent > max_risk:
-                max_risk = risk_percent
-
-            issues: list[str] = []
-            for ev in rule_evidence:
-                if "Không tìm thấy" not in ev:
-                    issues.append(ev)
+            issues = [ev for ev in rules.evidence if "Không tìm thấy" not in ev]
+            if style_prediction is not None and style_prediction.risk >= 0.5:
+                issues.append(
+                    "Bộ phân loại ngữ nghĩa nhận diện văn phong "
+                    f"{'giật gân' if style_prediction.top_category == 'sensational' else 'lừa đảo'}"
+                    f" ({style_prediction.risk:.0%})"
+                )
             if model_score is not None and model_score >= 0.4:
                 issues.append(f"Mô hình AI nhận diện xác suất tin giả: {model_score:.0%}")
 
             paragraph_analyses.append({
                 "index": idx,
                 "text": p_text,
-                "risk_score": risk_percent,
-                "label": label,
                 "model_score": round(model_score, 3) if model_score is not None else None,
-                "rule_score": round(rule_score, 3),
+                "rule_score": round(rules.combined, 3),
+                "style_score": round(style_risk, 3),
+                "fraud_score": round(fraud_risk, 3),
+                "factuality_score": model_score,
                 "suspicious_phrases": suspicious_phrases,
                 "issues": issues,
                 "claims": [],
@@ -115,39 +121,47 @@ class ArticleAnalyzer:
 
         if check_facts:
             try:
-                # Kiểm chứng toàn bộ hoặc phần văn bản chính
                 fact_report = self.fact_checker.check(cleaned_text[:25000])
+                if self.store is not None:
+                    fact_report = self.store.add_fact_check(fact_report, cleaned_text[:25000])
                 for claim in fact_report.claims:
-                    c_dict = claim.model_dump(mode="json")
-                    claims_data.append(c_dict)
-
-                    # Gán claim về đoạn văn liên quan nhất
-                    claim_text_lower = claim.claim.casefold()
-                    for p in paragraph_analyses:
-                        if (
-                            claim_text_lower in p["text"].casefold()
-                            or any(w in p["text"].casefold() for w in claim_text_lower.split()[:4] if len(w) > 3)
-                        ):
-                            p["claims"].append({
-                                "claim": claim.claim,
-                                "verdict": claim.verdict,
-                                "explanation": claim.explanation,
-                            })
-                            # Nếu luận điểm bị mâu thuẫn/bác bỏ, tăng điểm rủi ro cho đoạn đó
-                            if claim.verdict == "contradicted":
-                                p["risk_score"] = min(100, p["risk_score"] + 25)
-                                p["label"] = "DANGEROUS"
-                                p["issues"].append(f"Chứa luận điểm bị bác bỏ: \"{claim.claim}\"")
-                                p["suspicious_phrases"].append({
-                                    "phrase": claim.claim,
-                                    "start": 0,
-                                    "end": len(claim.claim),
-                                    "category": "claim_contradicted",
-                                    "reason": "Luận điểm mâu thuẫn với báo chí chính thống",
-                                })
-                            break
+                    claims_data.append(claim.model_dump(mode="json"))
+                    paragraph = self._paragraph_for_claim(claim.claim, paragraph_analyses)
+                    if paragraph is None:
+                        continue
+                    paragraph["claims"].append({
+                        "claim": claim.claim,
+                        "verdict": claim.verdict,
+                        "explanation": claim.explanation,
+                    })
+                    if claim.verdict == "contradicted":
+                        paragraph["factuality_score"] = max(
+                            paragraph["factuality_score"] or 0.0, CONTRADICTED_CLAIM_RISK
+                        )
+                        paragraph["issues"].append(f"Chứa luận điểm bị bác bỏ: \"{claim.claim}\"")
+                        paragraph["suspicious_phrases"].append({
+                            "phrase": claim.claim,
+                            "start": 0,
+                            "end": len(claim.claim),
+                            "category": "claim_contradicted",
+                            "reason": f"Luận điểm sai lệch: {claim.explanation}",
+                        })
             except Exception as err:
                 fact_check_error = str(err)
+
+        for paragraph in paragraph_analyses:
+            factuality = paragraph.pop("factuality_score")
+            risk = fuse(paragraph["style_score"], paragraph["fraud_score"], factuality)
+            paragraph["risk_score"] = round(risk.overall * 100)
+            paragraph["label"] = risk.label
+            paragraph["style_risk"] = round(risk.style_risk * 100)
+            paragraph["style_label"] = risk.style_label
+            paragraph["factuality_risk"] = (
+                None if factuality is None else round(factuality * 100)
+            )
+            paragraph["factuality_label"] = risk.factuality_label
+            paragraph["fraud_risk"] = round(risk.fraud_risk * 100)
+            del paragraph["style_score"], paragraph["fraud_score"]
 
         # Thống kê tổng quan
         num_paragraphs = len(paragraph_analyses)
@@ -161,22 +175,28 @@ class ArticleAnalyzer:
             1 for c in claims_data if c.get("verdict") in {"insufficient_evidence", "mixed"}
         )
 
-        # Tính điểm rủi ro tổng hợp cho toàn bài viết
-        avg_risk = total_risk_sum / num_paragraphs if num_paragraphs > 0 else 0.0
-        # Trọng số: 50% max_risk, 30% avg_risk, 20% phạt thêm nếu có luận điểm contradicted
-        claim_penalty = min(30, contradicted_claims_count * 15)
-        overall_risk = round(0.45 * max_risk + 0.35 * avg_risk + claim_penalty)
-        overall_risk = max(0, min(100, overall_risk))
+        # Hai trục độc lập: hình thức (style) và độ chính xác thông tin (factuality)
+        style_scores = [p["style_risk"] / 100 for p in paragraph_analyses]
+        article_style = 0.6 * max(style_scores) + 0.4 * sum(style_scores) / num_paragraphs
+        model_scores = [p["model_score"] for p in paragraph_analyses if p["model_score"] is not None]
+        article_model = sum(model_scores) / len(model_scores) if model_scores else None
+        fact_risk, fact_confidence = report_factuality(fact_report)
+        article_factuality = combine_factuality(article_model, fact_risk, fact_confidence)
+        article_fraud = max(p["fraud_risk"] / 100 for p in paragraph_analyses)
+        breakdown = fuse(article_style, article_fraud, article_factuality)
+        overall_risk = round(breakdown.overall * 100)
+        style_risk_score = round(article_style * 100)
+        factuality_risk_score = (
+            None if article_factuality is None else round(article_factuality * 100)
+        )
         credibility_score = 100 - overall_risk
+        overall_label = risk_label(breakdown.overall)
 
-        if overall_risk >= 65:
-            overall_label = "DANGEROUS"
+        if overall_label == "DANGEROUS":
             verdict_title = "NGUY CƠ TIN GIẢ RẤT CAO / SAI SỰ THẬT"
-        elif overall_risk >= 35:
-            overall_label = "SUSPICIOUS"
+        elif overall_label == "SUSPICIOUS":
             verdict_title = "CẢNH BÁO NGHI VẤN / THÔNG TIN CHƯA RÕ RÀNG"
         else:
-            overall_label = "SAFE"
             verdict_title = "ĐỘ TIN CẬY CAO / CHƯA THẤY DẤU HIỆU BẤT THƯỜNG"
 
         # Tổng hợp kết luận chi tiết của Agent
@@ -203,6 +223,8 @@ class ArticleAnalyzer:
                 "Các câu chữ chuẩn mực, không phát hiện dấu hiệu lừa đảo, giật gân hay mâu thuẫn sự thật lớn."
             )
 
+        conclusion_parts.append(self._axes_sentence(breakdown))
+
         recommendations: list[str] = []
         if overall_label == "DANGEROUS":
             recommendations.append("KHÔNG chia sẻ hoặc lan truyền bài viết này lên mạng xã hội.")
@@ -223,6 +245,11 @@ class ArticleAnalyzer:
                 "label": overall_label,
                 "verdict_title": verdict_title,
                 "conclusion": " ".join(conclusion_parts),
+                "style_risk_score": style_risk_score,
+                "style_label": breakdown.style_label,
+                "fraud_risk_score": round(article_fraud * 100),
+                "factuality_risk_score": factuality_risk_score,
+                "factuality_label": breakdown.factuality_label,
                 "stats": {
                     "total_paragraphs": num_paragraphs,
                     "dangerous_paragraphs": dangerous_count,
@@ -237,5 +264,34 @@ class ArticleAnalyzer:
             "paragraphs": paragraph_analyses,
             "claims": claims_data,
             "fact_check_error": fact_check_error,
+            "fact_check_report_id": fact_report.reportId if fact_report else None,
             "recommendations": recommendations,
         }
+
+    @staticmethod
+    def _paragraph_for_claim(
+        claim: str, paragraphs: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        claim_lower = claim.casefold()
+        for paragraph in paragraphs:
+            text_lower = paragraph["text"].casefold()
+            if claim_lower in text_lower or any(
+                word in text_lower for word in claim_lower.split()[:4] if len(word) > 3
+            ):
+                return paragraph
+        return None
+
+    @staticmethod
+    def _axes_sentence(breakdown: Any) -> str:
+        style = {
+            "SAFE": "văn phong chuẩn mực",
+            "SUSPICIOUS": "văn phong có dấu hiệu giật gân/câu view",
+            "DANGEROUS": "văn phong kích động, thao túng mạnh",
+        }[breakdown.style_label]
+        factuality = {
+            "UNVERIFIED": "nội dung chưa được xác minh",
+            "SAFE": "nội dung phù hợp với nguồn đối chiếu",
+            "SUSPICIOUS": "nội dung có phần chưa chính xác",
+            "DANGEROUS": "nội dung mâu thuẫn với nguồn đối chiếu",
+        }[breakdown.factuality_label]
+        return f"Đánh giá tách biệt: hình thức — {style}; sự thật — {factuality}."

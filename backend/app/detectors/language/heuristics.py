@@ -1,6 +1,7 @@
 import re
-from urllib.parse import urlparse
+from dataclasses import dataclass, field
 
+from app.detectors.language.domains import SHORTENED_HOSTS, hostname, inspect_host
 
 URGENCY_PATTERNS = (
     r"kh[oó]a\s+t[aà]i\s+kho[aả]n",
@@ -20,80 +21,6 @@ THREAT_PATTERNS = (
     r"t[aà]i\s+kho[aả]n\s+(?:c[uủ]a\s+b[aạ]n\s+)?s[eẽ]\s+b[iị]\s+(?:kh[oó]a|h[uủ]y)",
     r"ph[aạ]t\s+ngu[yê]n|kh[oở]i\s+t[oố]",
 )
-SHORTENED_HOSTS = {"bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "ow.ly", "shorturl.at"}
-BANK_DOMAINS = {
-    "vietcombank": {"vietcombank.com.vn"},
-    "techcombank": {"techcombank.com.vn"},
-    "mbbank": {"mbbank.com.vn"},
-    "bidv": {"bidv.com.vn"},
-    "agribank": {"agribank.com.vn"},
-    "vietinbank": {"vietinbank.vn"},
-    "vpbank": {"vpbank.com.vn"},
-    "acb": {"acb.com.vn"},
-    "sacombank": {"sacombank.com.vn"},
-}
-
-
-def _matches(text: str, patterns: tuple[str, ...]) -> list[str]:
-    return [pattern for pattern in patterns if re.search(pattern, text, re.IGNORECASE)]
-
-
-def _hostname(url: str) -> str:
-    parsed = urlparse(url if "://" in url else f"https://{url}")
-    return (parsed.hostname or "").casefold().rstrip(".")
-
-
-def inspect_rules(preprocessed: dict[str, object]) -> tuple[float, list[str]]:
-    text = str(preprocessed["lowered"])
-    evidence: list[str] = []
-    score = 0.0
-
-    if _matches(text, URGENCY_PATTERNS):
-        score += 0.35
-        evidence.append("Có ngôn ngữ thúc giục hoặc hứa trúng thưởng")
-    if _matches(text, THREAT_PATTERNS):
-        score += 0.4
-        evidence.append("Có dấu hiệu đe dọa khóa tài khoản hoặc gây áp lực")
-    if _matches(text, SENSITIVE_PATTERNS):
-        score += 0.4
-        evidence.append("Có yêu cầu chuyển tiền hoặc cung cấp thông tin xác thực")
-    if _matches(text, SENSATIONAL_PATTERNS):
-        score += 0.30
-        evidence.append("Sử dụng từ ngữ giật gân, câu view, thổi phồng cảm xúc")
-    if _matches(text, UNVERIFIED_SOURCE_PATTERNS):
-        score += 0.35
-        evidence.append("Dẫn chứng nguồn tin mập mờ, nặc danh hoặc tin đồn chưa kiểm chứng")
-    if _matches(text, CALL_TO_ACTION_PATTERNS):
-        score += 0.25
-        evidence.append("Thúc ép chia sẻ, lan truyền gấp thông tin thiếu kiểm chứng")
-    if _matches(text, CONSPIRACY_PATTERNS):
-        score += 0.45
-        evidence.append("Chứa nội dung thuyết âm mưu hoặc khẳng định chữa bệnh siêu nhiên/thần dược")
-
-    for url in preprocessed["urls"]:
-        host = _hostname(str(url))
-        if host in SHORTENED_HOSTS:
-            score += 0.35
-            evidence.append(f"Phát hiện URL rút gọn: {host}")
-        for bank, official_domains in BANK_DOMAINS.items():
-            is_official_host = any(
-                host == domain or host.endswith(f".{domain}")
-                for domain in official_domains
-            )
-            if bank in host and not is_official_host:
-                score += 0.55
-                evidence.append(f"Tên miền có thể giả mạo {bank}: {host}")
-                break
-
-    if preprocessed["phone_numbers"]:
-        evidence.append("Văn bản chứa số điện thoại; cần tránh chia sẻ thông tin cá nhân")
-    if preprocessed["bank_accounts"]:
-        evidence.append("Văn bản chứa chuỗi số giống số tài khoản; cần tránh chia sẻ thông tin cá nhân")
-
-    if not evidence:
-        evidence.append("Không tìm thấy dấu hiệu rủi ro rõ ràng theo bộ quy tắc")
-    return min(score, 0.95), evidence
-
 
 SENSATIONAL_PATTERNS = (
     r"c[uự]c\s+s[oố]c",
@@ -145,6 +72,77 @@ CONSPIRACY_PATTERNS = (
     r"t[aậ]p\s+[đd]o[aà]n\s+d[uượ]c\s+che\s+gi[aấ]u",
     r"th[eế]\s+l[uự]c\s+ng[aầ]m",
 )
+
+
+@dataclass
+class RuleResult:
+    """Điểm luật tách theo nhóm: hình thức (style) và lừa đảo (fraud)."""
+
+    style_score: float = 0.0
+    fraud_score: float = 0.0
+    evidence: list[str] = field(default_factory=list)
+
+    @property
+    def combined(self) -> float:
+        return min(self.style_score + self.fraud_score, 0.95)
+
+
+STYLE_RULES = (
+    (SENSATIONAL_PATTERNS, 0.30, "Sử dụng từ ngữ giật gân, câu view, thổi phồng cảm xúc"),
+    (UNVERIFIED_SOURCE_PATTERNS, 0.35, "Dẫn chứng nguồn tin mập mờ, nặc danh hoặc tin đồn chưa kiểm chứng"),
+    (CALL_TO_ACTION_PATTERNS, 0.25, "Thúc ép chia sẻ, lan truyền gấp thông tin thiếu kiểm chứng"),
+    (CONSPIRACY_PATTERNS, 0.45, "Chứa nội dung thuyết âm mưu hoặc khẳng định chữa bệnh siêu nhiên/thần dược"),
+)
+FRAUD_RULES = (
+    (URGENCY_PATTERNS, 0.35, "Có ngôn ngữ thúc giục hoặc hứa trúng thưởng"),
+    (THREAT_PATTERNS, 0.40, "Có dấu hiệu đe dọa khóa tài khoản hoặc gây áp lực"),
+    (SENSITIVE_PATTERNS, 0.40, "Có yêu cầu chuyển tiền hoặc cung cấp thông tin xác thực"),
+)
+
+
+def _matches(text: str, patterns: tuple[str, ...]) -> list[str]:
+    return [pattern for pattern in patterns if re.search(pattern, text, re.IGNORECASE)]
+
+
+def inspect_rules_detailed(preprocessed: dict[str, object]) -> RuleResult:
+    text = str(preprocessed["lowered"])
+    result = RuleResult()
+
+    for patterns, weight, message in FRAUD_RULES:
+        if _matches(text, patterns):
+            result.fraud_score += weight
+            result.evidence.append(message)
+    for patterns, weight, message in STYLE_RULES:
+        if _matches(text, patterns):
+            result.style_score += weight
+            result.evidence.append(message)
+
+    for url in preprocessed["urls"]:
+        host = hostname(str(url))
+        if host in SHORTENED_HOSTS:
+            result.fraud_score += 0.35
+            result.evidence.append(f"Phát hiện URL rút gọn: {host}")
+        finding = inspect_host(host)
+        if finding is not None:
+            result.fraud_score += finding.score
+            result.evidence.append(f"Tên miền có thể giả mạo {finding.brand}: {host} ({finding.reason})")
+
+    if preprocessed["phone_numbers"]:
+        result.evidence.append("Văn bản chứa số điện thoại; cần tránh chia sẻ thông tin cá nhân")
+    if preprocessed["bank_accounts"]:
+        result.evidence.append("Văn bản chứa chuỗi số giống số tài khoản; cần tránh chia sẻ thông tin cá nhân")
+
+    if not result.evidence:
+        result.evidence.append("Không tìm thấy dấu hiệu rủi ro rõ ràng theo bộ quy tắc")
+    result.style_score = min(result.style_score, 0.95)
+    result.fraud_score = min(result.fraud_score, 0.95)
+    return result
+
+
+def inspect_rules(preprocessed: dict[str, object]) -> tuple[float, list[str]]:
+    result = inspect_rules_detailed(preprocessed)
+    return result.combined, result.evidence
+
 
 RULE_CATEGORY_INFO = [
     (SENSATIONAL_PATTERNS, "sensational", "Từ ngữ giật gân, câu view, kích động cảm xúc"),
