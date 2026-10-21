@@ -76,6 +76,26 @@ Kết quả gồm claims_{train,val,test}.csv (nhãn SUPPORTED/REFUTED/NEI) và 
 
 Fake_news_data trong repo chưa rõ nguồn và giấy phép nên không nằm trong mặc định. Chỉ bật bằng --sources vifactcheck,viwikifc,fake_news_data khi đã xác nhận được quyền sử dụng. Khi bật, pipeline sinh thêm news_{train,val,test}.csv (fake/real).
 
+Model kiểm chứng claim (NLI)
+
+train_nli.py fine-tune vinai/phobert-base (giấy phép MIT) để phân loại cặp (claim, evidence) thành SUPPORTED/REFUTED/NEI, dùng claims_{train,val,test}.csv của pipeline trên. Văn bản được tách từ bằng pyvi trước khi đưa vào PhoBERT. Không dùng phobert-base-v2 (AGPL-3.0) và visobert (không ghi giấy phép).
+
+Cài PyTorch bản CUDA trước (Windows, GPU NVIDIA), rồi cài phần còn lại:
+
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+python -m pip install -r requirements-train.txt
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+
+Train (mặc định 4 epoch, batch 16 x 2 cộng dồn gradient, bf16 nếu GPU hỗ trợ, giữ checkpoint có macro-F1 trên val cao nhất):
+
+python -m app.detectors.language.train_nli
+
+Hết VRAM (CUDA out of memory) thì giảm batch: --batch-size 8 --grad-accum 4, hoặc thêm --gradient-checkpointing. Chạy thử nhanh: --max-train-samples 500 --max-eval-samples 200 --epochs 1.
+
+Model lưu ở data\models\nli-phobert (không commit), kèm deepguard_nli.json ghi giấy phép model và dữ liệu, siêu tham số, macro-F1/accuracy/ma trận nhầm lẫn trên val và test, tách theo từng bộ dữ liệu. Đánh giá lại model đã lưu:
+
+python -m app.detectors.language.train_nli --evaluate-only data\models\nli-phobert
+
 Nguồn dữ liệu tham khảo
 
 - UIT-NLP: tìm UIT-ViHSD và UIT-ViCTSD trên GitHub/Hugging Face; kiểm tra nhãn và giấy phép của từng bộ trước khi dùng.

@@ -3,6 +3,7 @@ frontend/dist/
 __pycache__/
 backend/.pytest_cache/
 backend/data/models/*.joblib
+backend/data/models/*/
 /data/language/*
 !/data/language/.gitkeep
 .venv/

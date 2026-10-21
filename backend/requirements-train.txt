@@ -1,0 +1,6 @@
+# Dependencies for fine-tuning the claim-verification (NLI) model (app.detectors.language.train_nli).
+# Install PyTorch with CUDA first, see app/detectors/language/README.md.
+-r requirements.txt
+torch>=2.3
+transformers>=4.46,<5
+accelerate>=0.33

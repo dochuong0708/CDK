@@ -35,7 +35,8 @@ Chỉ dùng dữ liệu có giấy phép mở rõ ràng và hợp pháp:
 
 ## Giai đoạn 2 — Model phân loại tin
 
-- Fine-tune `vinai/phobert-base-v2` (bài báo) hoặc `uitnlp/visobert` (mạng xã hội). Nếu có GPU từ 24 GB VRAM thì có thể dùng `xlm-roberta-large`.
+- Fine-tune `vinai/phobert-base` hoặc `vinai/phobert-large` (MIT). Nếu có GPU từ 24 GB VRAM thì có thể dùng `xlm-roberta-large` (MIT).
+- Không dùng `vinai/phobert-base-v2` (AGPL-3.0, buộc công khai mã nguồn phần mềm dùng model) và `uitnlp/visobert` (không ghi giấy phép).
 - Bài dài hơn 256 token: chia thành nhiều đoạn có chồng lấn rồi gộp kết quả bằng max hoặc attention pooling. Cách khác là chỉ lấy phần đầu và phần cuối bài.
 - Dùng loss có trọng số lớp hoặc focal loss, vì tỉ lệ fake/real hiện khoảng 1:3.
 - Xuất model sang ONNX và lượng tử hóa INT8 để chấm nhanh trên dữ liệu lớn.
@@ -44,7 +45,8 @@ Chỉ dùng dữ liệu có giấy phép mở rõ ràng và hợp pháp:
 ## Giai đoạn 3 — Fact-check bằng RAG + NLI
 
 - Lập chỉ mục kho bằng chứng có giấy phép mở (Wikipedia tiếng Việt, ngữ cảnh trong ViFactCheck/ViWikiFC) theo cách lai: BGE-M3 (dense) kết hợp BM25, rồi sắp xếp lại bằng `BAAI/bge-reranker-v2-m3`.
-- Phân loại quan hệ claim–bằng chứng bằng model NLI, fine-tune trên `claims_train.csv` (ViFactCheck + ViWikiFC, khoảng 22.000 mẫu). Model này thay `qwen2.5:3b` ở bước kết luận, nhanh hơn và cho kết quả lặp lại được.
+- Phân loại quan hệ claim–bằng chứng bằng model NLI. `train_nli.py` fine-tune `vinai/phobert-base` trên `claims_train.csv` (ViFactCheck + ViWikiFC, khoảng 22.000 mẫu) và báo macro-F1 theo từng bộ.
+- Việc tiếp theo: gắn model NLI vào `fact_checking.py` để thay `qwen2.5:3b` ở bước kết luận, nhanh hơn và cho kết quả lặp lại được.
 - Chỉ dùng LLM lớn hơn (`qwen2.5:7b`/`14b`) để viết phần giải thích.
 
 ## Giai đoạn 4 — Kết hợp và hiệu chỉnh điểm
