@@ -15,7 +15,6 @@ import csv
 import hashlib
 import json
 import re
-import shutil
 import unicodedata
 import urllib.request
 from collections import Counter, defaultdict
@@ -184,20 +183,30 @@ def viwikifc_records(rows: Iterable[dict[str, Any]]) -> Iterator[ClaimRecord]:
 # ---------------------------------------------------------------- tải và đọc file
 
 
-def download(url: str, target: Path, force: bool = False) -> Path:
+def download(url: str, target: Path, force: bool = False, timeout: float = 60) -> Path:
+    label = f"{target.parent.name}/{target.name}"
     if target.exists() and not force:
+        print(f"  {label}: đã có sẵn, bỏ qua tải", flush=True)
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_name(target.name + ".part")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=300) as response, partial.open("wb") as out:
-        shutil.copyfileobj(response, out, length=1 << 20)
+    with urllib.request.urlopen(request, timeout=timeout) as response, partial.open("wb") as out:
+        total = int(response.headers.get("Content-Length") or 0)
+        done = 0
+        while chunk := response.read(1 << 20):
+            out.write(chunk)
+            done += len(chunk)
+            size = f"{done / 1e6:.1f}/{total / 1e6:.1f} MB" if total else f"{done / 1e6:.1f} MB"
+            print(f"\r  Đang tải {label}: {size}", end="", flush=True)
+    print(flush=True)
     partial.replace(target)
     return target
 
 
 def fetch_hf_files(source: str, raw_dir: Path, revision: str, force: bool) -> list[Path]:
     repo, paths = HF_SOURCES[source]
+    print(f"Tải {source} từ https://huggingface.co/datasets/{repo}", flush=True)
     return [
         download(
             HF_RESOLVE_URL.format(repo=repo, revision=revision, path=path),
@@ -499,7 +508,9 @@ def process(
     out_dir: Path,
 ) -> dict[str, Any]:
     raw_counts = Counter(record.dataset for record in records)
+    print(f"[{prefix}] Đang loại trùng {len(records)} bản ghi...", flush=True)
     kept, stats = deduplicate(records, key, threshold, shingle_size)
+    print(f"[{prefix}] Đang chia train/val/test...", flush=True)
     splits = split_by_dataset(kept, ratios, seed)
     for name, items in splits.items():
         write_split(out_dir / f"{prefix}_{name}.csv", items, record_type)
