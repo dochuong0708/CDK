@@ -12,6 +12,8 @@ SYSTEM_PROMPT = """Bạn là trợ lý DeepGuard, trả lời bằng tiếng Vi�
 Khi cần phân tích, hãy gọi tool tương ứng và trình bày nhãn, điểm rủi ro, độ tin cậy
 và bằng chứng đúng như detector trả về. Đây là kết quả heuristic/model hỗ trợ sàng lọc,
 không phải bằng chứng chắc chắn hay kết luận chuyên môn. Không tự bịa kết quả.
+Khi người dùng yêu cầu kiểm chứng sự thật, hãy dùng fact_check_text và chỉ kết luận theo
+luận điểm, nguồn cùng đoạn trích mà tool trả về. Snippet tìm kiếm chưa thay thế việc đọc bài gốc.
 Với ảnh hoặc âm thanh, cần đường dẫn tệp local và modality. Video chưa được hỗ trợ.
 Nếu người dùng yêu cầu xem lịch sử hoặc một kết quả cũ, hãy dùng tool phù hợp.
 Nếu thiếu văn bản, đường dẫn hoặc thông tin cần thiết, hãy hỏi lại trước khi gọi tool."""
@@ -36,6 +38,46 @@ def _explicit_text_analysis(text: str) -> str | None:
     return quoted.group(1).strip() if quoted else text.strip()
 
 
+def _explicit_fact_check(text: str) -> str | None:
+    if not re.search(
+        r"\b(kiểm\s+chứng|fact[ -]?check|xác\s+minh\s+(?:tin|thông\s+tin|bài\s+viết|nội\s+dung))\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return None
+    quoted = re.search(r'["“](.+?)["”]', text, re.DOTALL)
+    if quoted:
+        return quoted.group(1).strip()
+    _, separator, remainder = text.partition(":")
+    return remainder.strip() if separator and remainder.strip() else text.strip()
+
+
+def _format_fact_check(result: dict[str, Any]) -> str:
+    if "error" in result:
+        return f"Không thể kiểm chứng: {result['error']}"
+
+    verdict_names = {
+        "supported": "Được nguồn hỗ trợ",
+        "contradicted": "Bị nguồn mâu thuẫn",
+        "mixed": "Có phần đúng, có phần mâu thuẫn",
+        "insufficient_evidence": "Chưa đủ bằng chứng",
+    }
+    lines = [result["summary"]]
+    for index, claim in enumerate(result["claims"], start=1):
+        lines.extend(
+            [
+                f"\n{index}. Luận điểm: {claim['claim']}",
+                f"Kết quả: {verdict_names.get(claim['verdict'], claim['verdict'])} "
+                f"({claim['confidence']:.0%})",
+                f"Nhận định: {claim['explanation']}",
+            ]
+        )
+        for source in claim["evidence"]:
+            lines.append(f"- [{source['stance']}] {source['title']} - {source['url']}")
+            if source["snippet"]:
+                lines.append(f"  Trích đoạn: {source['snippet']}")
+    lines.append(f"\nLưu ý: {result['disclaimer']}")
+    return "\n".join(lines)
 def _format_analysis(result: dict[str, Any]) -> str:
     if "error" in result:
         return f"Không thể phân tích: {result['error']}"
@@ -55,6 +97,15 @@ def respond(client: Any, messages: list[Any], tools: DeepGuardTools, model: str)
         (message for message in reversed(messages) if isinstance(message, dict) and message.get("role") == "user"),
         None,
     )
+    fact_check_text = (
+        _explicit_fact_check(latest_user_message.get("content", ""))
+        if latest_user_message
+        else None
+    )
+    if fact_check_text is not None:
+        result = tools.execute("fact_check_text", {"text": fact_check_text})
+        return _format_fact_check(result)
+
     analysis_text = (
         _explicit_text_analysis(latest_user_message.get("content", ""))
         if latest_user_message
@@ -91,7 +142,9 @@ def main() -> None:
     model = os.getenv("DEEPGUARD_AGENT_MODEL", "qwen2.5:3b")
     client = Client(host=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
     store = AnalysisStore(os.getenv("DEEPGUARD_DB_PATH", "./data/deepguard.db"))
-    tools = DeepGuardTools(DetectorOrchestrator(), store)
+    from app.services.fact_checking import FactChecker
+
+    tools = DeepGuardTools(DetectorOrchestrator(), store, FactChecker(client=client, model=model))
     messages: list[Any] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     print(f"DeepGuard Agent | model: {model} | nhập /exit để thoát")
@@ -108,7 +161,10 @@ def main() -> None:
 
         messages.append({"role": "user", "content": prompt})
         try:
+            print("DeepGuard đang xử lý...", flush=True)
             print(f"DeepGuard: {respond(client, messages, tools, model)}")
+        except KeyboardInterrupt:
+            print("\nĐã hủy yêu cầu hiện tại. Agent vẫn đang chờ câu hỏi tiếp theo.")
         except Exception as error:
             print(f"Không thể gọi agent: {error}")
 

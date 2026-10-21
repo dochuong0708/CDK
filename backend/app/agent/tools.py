@@ -4,7 +4,9 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.db.store import AnalysisStore
+from app.models.fact_checking import FactCheckRequest
 from app.models.schemas import Analysis, TextRequest
+from app.services.fact_checking import FactChecker
 from app.services.orchestrator import DetectorOrchestrator
 
 
@@ -17,6 +19,18 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {"text": {"type": "string", "maxLength": 5000}},
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fact_check_text",
+            "description": "Extract verifiable claims from text, search web sources, and compare the evidence.",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string", "maxLength": 30000}},
                 "required": ["text"],
             },
         },
@@ -69,15 +83,24 @@ TOOL_DEFINITIONS = [
 
 
 class DeepGuardTools:
-    def __init__(self, orchestrator: DetectorOrchestrator, store: AnalysisStore):
+    def __init__(
+        self,
+        orchestrator: DetectorOrchestrator,
+        store: AnalysisStore,
+        fact_checker: FactChecker | None = None,
+    ):
         self.orchestrator = orchestrator
         self.store = store
+        self.fact_checker = fact_checker or FactChecker()
 
     def execute(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         try:
             if name == "analyze_text":
                 request = TextRequest(text=arguments.get("text", ""))
                 return self._save(self.orchestrator.analyze_text(request.text))
+            if name == "fact_check_text":
+                request = FactCheckRequest(text=arguments.get("text", ""))
+                return self.fact_checker.check(request.text).model_dump(mode="json")
             if name == "analyze_media":
                 return self._analyze_media(arguments)
             if name == "list_analyses":
