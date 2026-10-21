@@ -61,6 +61,21 @@ Lệnh train SMS (ham an toàn, spam rủi ro; tự chia train/test có stratify
 
 python -m app.detectors.language.train ..\data\TEXT\SMS_data\vi_dataset.csv --output data\models\vietnamese-sms-risk.joblib
 
+Pipeline dữ liệu lớn (ReINTEL, ViFactCheck, ViWikiFC, RSS)
+
+Lộ trình nâng cấp chi tiết nằm trong ROADMAP.md. Dữ liệu tải về nằm ở data/language/raw và kết quả xử lý nằm ở data/language/processed. Hai thư mục này không được commit vì giấy phép và dung lượng.
+
+python -m pip install -r requirements-data.txt
+python -m app.detectors.language.rss_crawler --full-text --max-items-per-feed 50
+python -m app.detectors.language.rss_crawler --debunks
+python -m app.detectors.language.data_pipeline
+
+Kết quả gồm news_{train,val,test}.csv (nhãn fake/real), claims_{train,val,test}.csv (nhãn SUPPORTED/REFUTED/NEI) và manifest.json. Có thể train ngay bằng lệnh:
+
+python -m app.detectors.language.train ..\data\language\processed\news_train.csv --text-column text --label-column label --validation-dataset ..\data\language\processed\news_val.csv --output data\models\news_risk.joblib
+
+Bảng quy đổi nhãn: Fake_news_data 0=fake, 1=real; ReINTEL 1=fake, 0=real (chỉ dùng split train vì split test không có nhãn); ViFactCheck 0=SUPPORTED, 1=REFUTED, 2=NEI; ViWikiFC Supports/Refutes/Not_Enough_Information. Tin RSS được gắn nhãn real yếu (label_origin=weak). Không nên đánh giá model chỉ trên tin RSS.
+
 Nguồn dữ liệu tham khảo
 
 - UIT-NLP: tìm UIT-ViHSD và UIT-ViCTSD trên GitHub/Hugging Face; kiểm tra nhãn và giấy phép của từng bộ trước khi dùng.
