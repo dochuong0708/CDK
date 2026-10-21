@@ -1,10 +1,8 @@
 import csv
-import urllib.error
 
 import pytest
 
 from app.detectors.language import data_pipeline as dp
-from app.detectors.language.rss_crawler import PoliteFetcher, crawl, parse_feed
 
 
 def _news(id_, text, label="real", source="", dataset="d", origin="gold"):
@@ -14,15 +12,6 @@ def _news(id_, text, label="real", source="", dataset="d", origin="gold"):
 
 
 def test_label_maps_follow_dataset_cards():
-    reintel = list(dp.reintel_records([
-        {"id": 1, "post_message": "Tin đồn thất thiệt về vaccine lan truyền", "label": 1,
-         "user_name": "u1", "timestamp_post": 1588000000},
-        {"id": 2, "post_message": "Bộ Y tế công bố số ca mắc mới trong ngày", "label": 0},
-        {"id": 3, "post_message": "Bài trong split test không có nhãn", "label": None},
-    ]))
-    assert [(r.label, r.source) for r in reintel] == [("fake", "reintel-user:u1"), ("real", "")]
-    assert reintel[0].published_at.startswith("2020-04-27")
-
     local = list(dp.local_fake_news_records(
         [{"Label": "0", "Maintext": "Bài báo giả mạo được chia sẻ rộng rãi"}], "train"
     ))
@@ -40,21 +29,16 @@ def test_label_maps_follow_dataset_cards():
     ]
 
 
+def test_default_sources_are_only_openly_licensed():
+    assert set(dp.DEFAULT_SOURCES) == set(dp.DATASET_LICENSES)
+    assert "fake_news_data" not in dp.DEFAULT_SOURCES
+    with pytest.raises(SystemExit):
+        dp.main(["--sources", "reintel"])
+
+
 def test_unknown_label_is_rejected():
     with pytest.raises(ValueError, match="không nằm trong bảng quy đổi"):
         list(dp.vifactcheck_records([{"Statement": "A", "labels": 9}]))
-
-
-def test_rss_records_are_weak_real_and_require_full_text():
-    rows = [
-        {"url": "https://vnexpress.net/a", "publisher": "vnexpress.net", "text": "x" * 500},
-        {"url": "https://vnexpress.net/b", "publisher": "vnexpress.net", "text": "tóm tắt ngắn"},
-    ]
-    records = list(dp.rss_records(rows, min_chars=400))
-    assert len(records) == 1
-    assert (records[0].label, records[0].label_origin, records[0].source) == (
-        "real", "weak", "vnexpress.net"
-    )
 
 
 def test_clean_text_keeps_paragraphs_and_normalizes_unicode():
@@ -109,69 +93,24 @@ def test_group_split_falls_back_to_records_when_too_few_sources():
     assert [len(splits[name]) for name in dp.SPLITS] == [8, 1, 1]
 
 
-def test_main_writes_trainable_splits_and_manifest(tmp_path, monkeypatch):
-    rss = tmp_path / "news_rss.csv"
-    with rss.open("w", encoding="utf-8", newline="") as target:
-        writer = csv.DictWriter(target, fieldnames=["url", "publisher", "title", "text"])
+def test_main_writes_splits_and_license_manifest(tmp_path, monkeypatch):
+    raw = tmp_path / "viwikifc.csv"
+    labels = ["Supports", "Refutes", "Not_Enough_Information"]
+    with raw.open("w", encoding="utf-8", newline="") as target:
+        writer = csv.DictWriter(target, fieldnames=["pairID", "claim", "evidence", "gold_label", "title"])
         writer.writeheader()
-        for i in range(12):
-            body = " ".join(f"bài{i}-{j}" for j in range(80))
-            writer.writerow({"url": f"https://p{i % 4}.vn/{i}", "publisher": f"p{i % 4}.vn",
-                             "title": f"T{i}", "text": body})
+        for i in range(30):
+            writer.writerow({
+                "pairID": f"p{i}", "claim": " ".join(f"claim{i}-{j}" for j in range(20)),
+                "evidence": f"bằng chứng {i}", "gold_label": labels[i % 3], "title": f"Trang {i % 10}",
+            })
+    monkeypatch.setattr(dp, "fetch_hf_files", lambda source, *args: [raw])
     out = tmp_path / "out"
-    manifest = dp.main(["--sources", "rss", "--rss-file", str(rss), "--out-dir", str(out)])
+    manifest = dp.main(["--sources", "viwikifc", "--out-dir", str(out)])
 
-    assert manifest["news"]["dedup"]["kept"] == 12
-    with (out / "news_train.csv").open(encoding="utf-8") as source:
+    assert manifest["claims"]["dedup"]["kept"] == 30
+    assert manifest["licenses"]["viwikifc"]["license"] == "CC-BY-4.0"
+    assert "news" not in manifest
+    with (out / "claims_train.csv").open(encoding="utf-8") as source:
         rows = list(csv.DictReader(source))
-    assert rows and {"text", "label"} <= set(rows[0]) and rows[0]["label"] == "real"
-    assert (out / "manifest.json").exists()
-
-
-RSS_XML = """<?xml version="1.0"?><rss version="2.0"><channel>
-<item><title>Tin &amp; thời sự</title><link>https://example.vn/a</link>
-<description><![CDATA[<a href="x"><img src="y"></a></br>Tóm tắt <b>bài</b>]]></description>
-<pubDate>Wed, 21 Oct 2026 17:24:48 +0700</pubDate></item>
-<item><title>Bài 2</title><link>https://example.vn/b</link><description>Khác</description></item>
-</channel></rss>"""
-
-
-def test_parse_feed_strips_html():
-    entries = parse_feed(RSS_XML, "example.vn")
-    assert entries[0]["title"] == "Tin & thời sự"
-    assert entries[0]["summary"] == "Tóm tắt bài"
-    assert entries[0]["published_at"] == "2026-10-21T17:24:48+07:00"
-
-
-def test_parse_feed_tolerates_unescaped_ampersand():
-    broken = "<rss><channel><item><title>Omoda & Jaecoo</title>"\
-        "<link>https://tingia.gov.vn/a.html</link></item></channel></rss>"
-    assert parse_feed(broken, "tingia.gov.vn")[0]["title"] == "Omoda & Jaecoo"
-
-
-def _fake_web(pages):
-    def opener(url, timeout):
-        if url not in pages:
-            raise urllib.error.HTTPError(url, 404, "not found", None, None)
-        return pages[url]
-    return opener
-
-
-def test_crawl_respects_robots_and_skips_known_urls(tmp_path):
-    pages = {
-        "https://example.vn/robots.txt": "User-agent: *\nDisallow: /private\n",
-        "https://example.vn/rss": RSS_XML,
-        "https://blocked.vn/robots.txt": "User-agent: *\nDisallow: /\n",
-    }
-    fetcher = PoliteFetcher(delay=0, opener=_fake_web(pages))
-    out = tmp_path / "rss.csv"
-    feeds = {"example.vn": "https://example.vn/rss", "blocked.vn": "https://blocked.vn/rss"}
-
-    first = crawl(feeds, out, fetcher)
-    second = crawl(feeds, out, fetcher)
-
-    assert (first["new"], first["feeds_failed"]) == (2, 1)
-    assert (second["new"], second["skipped_known"]) == (0, 2)
-    with out.open(encoding="utf-8") as source:
-        rows = list(csv.DictReader(source))
-    assert rows[0]["text"] == "Tin & thời sự\n\nTóm tắt bài"
+    assert rows and {"claim", "evidence", "label"} <= set(rows[0])

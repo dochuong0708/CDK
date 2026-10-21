@@ -2,43 +2,36 @@
 
 Mục tiêu: đạt kết quả ổn định trên dữ liệu mới (khác nguồn, khác chủ đề, khác thời điểm), không chỉ trên tập test cùng nguồn với tập train.
 
-## Hiện trạng (đo ngày 21/10/2026)
+## Nguyên tắc dữ liệu
 
-Baseline TF-IDF (1–2 gram) + Logistic Regression, train trên `news_train.csv` do `data_pipeline.py` sinh ra, chấm trên `news_test.csv`. Dữ liệu được chia theo nguồn nên các nguồn trong test không xuất hiện trong train.
+Chỉ dùng dữ liệu có giấy phép mở rõ ràng và hợp pháp:
+- Không dùng bộ không ghi giấy phép hoặc phải xin tác giả (ReINTEL, VFND, `vietgpt/binhvq_news_vi`).
+- Không thu thập nội dung báo điện tử hay tingia.gov.vn. Các trang này ghi rõ bản quyền và cấm sao chép nếu chưa được chấp thuận bằng văn bản.
+- Mọi bộ dữ liệu mới phải được ghi vào `DATASET_LICENSES` trong `data_pipeline.py`, kèm link và thông tin ghi nguồn.
 
-| Tập test | Số mẫu | Macro-F1 |
+| Bộ dữ liệu | Giấy phép | Trạng thái |
 |---|---|---|
-| Toàn bộ | 551 | 0.749 |
-| `fake_news_data` | 118 | 0.805 (bản chia cũ của repo cho 0.94) |
-| ReINTEL | 421 | 0.673 |
-| Train chỉ trên `fake_news_data`, test trên ReINTEL | 421 | 0.167 |
-
-RSS chỉ có 12 tin thật trong test, nhưng baseline phân loại đúng 3/12 (accuracy 0.25), tức gắn nhầm phần lớn tin báo mới là giả.
-
-Kết luận: TF-IDF học theo từ vựng và nguồn. Sang nguồn khác hoặc thời điểm khác thì kết quả giảm mạnh. Con số 0.94 trước đây bị thổi phồng vì tập train và tập test lấy từ cùng nguồn.
+| ViFactCheck | MIT | Dùng |
+| ViWikiFC | CC-BY-4.0 (bắt buộc ghi nguồn) | Dùng |
+| `data/TEXT/Fake_news_data` | Chưa rõ | Tắt mặc định, chờ chủ dự án xác nhận |
 
 ## Giai đoạn 0 — Dữ liệu và cách đánh giá (PR này)
 
 - `data_pipeline.py` làm các việc sau:
-  - Tải ReINTEL, ViFactCheck và ViWikiFC, kèm dữ liệu `Fake_news_data` có sẵn và tin RSS đã thu thập.
-  - Quy đổi nhãn về `fake`/`real` cho tin tức và `SUPPORTED`/`REFUTED`/`NEI` cho claim. Gặp nhãn lạ thì báo lỗi, không tự đoán.
-  - Loại bài gần trùng bằng MinHash + LSH. Cụm bài trùng mà mâu thuẫn nhãn thì bỏ cả cụm.
-  - Chia train/val/test theo nhóm nguồn (user, tác giả, trang Wikipedia, báo), làm riêng cho từng bộ dữ liệu. Nếu một nguồn xuất hiện ở hai tập thì script báo lỗi.
-  - Ghi `manifest.json` gồm cấu hình, SHA-256 của file đầu vào và thống kê.
-- `rss_crawler.py` làm các việc sau:
-  - Thu thập RSS của VnExpress, Tuổi Trẻ, Thanh Niên, Dân Trí và VTV, có tùy chọn tải toàn văn.
-  - Thu thập riêng tin đã bị bác bỏ trên tingia.gov.vn.
-  - Tuân thủ robots.txt, giãn cách request và bỏ qua URL đã thu thập.
+  - Tải ViFactCheck và ViWikiFC.
+  - Quy đổi nhãn về `SUPPORTED`/`REFUTED`/`NEI`. Gặp nhãn lạ thì báo lỗi, không tự đoán.
+  - Loại claim gần trùng bằng MinHash + LSH. Cụm claim trùng mà mâu thuẫn nhãn thì bỏ cả cụm.
+  - Chia train/val/test theo nhóm nguồn (tác giả bài báo, trang Wikipedia), làm riêng cho từng bộ. Nếu một nguồn xuất hiện ở hai tập thì script báo lỗi.
+  - Ghi `manifest.json` gồm cấu hình, SHA-256 file đầu vào, giấy phép và thông tin ghi nguồn.
 - Những việc tiếp theo cần làm:
-  - Viết `evaluate.py` chạy theo lô, tính macro-F1, PR-AUC và ECE, tách theo bộ dữ liệu, nguồn và tháng.
-  - Thêm cách chia theo thời gian: train trên dữ liệu cũ, test trên dữ liệu mới.
+  - Viết `evaluate.py` chạy theo lô, tính macro-F1, PR-AUC và ECE, tách theo bộ dữ liệu và nguồn.
+  - Thêm cách chia theo thời gian khi dữ liệu có ngày đăng.
 
-## Giai đoạn 1 — Mở rộng dữ liệu
+## Giai đoạn 1 — Mở rộng dữ liệu một cách hợp pháp
 
-1. Chạy crawler RSS hằng ngày để tích lũy tin thật có toàn văn. Nhãn `real` của tin RSS là nhãn yếu (`label_origin=weak`).
-2. Thu thập tingia.gov.vn để lấy các tin đồn đã bị bác bỏ. Từ mỗi bài, trích claim sai làm mẫu `fake` hoặc `REFUTED`. Cần đọc điều khoản sử dụng của trang trước.
-3. Tạo tin giả tổng hợp: dùng LLM sửa tin RSS (đổi số liệu, ngày tháng, nhân vật, đảo ý, thêm giọng giật gân). Mẫu tạo ra được gắn `label_origin=synthetic`. Chỉ dùng mẫu tổng hợp trong tập train. Tập test chỉ chứa tin giả có thật ngoài đời.
-4. Dùng `vietgpt/binhvq_news_vi` (khoảng 19 triệu tin, không có nhãn) cho hai việc: train thêm để model quen văn báo chí (DAPT), và làm kho bằng chứng cho RAG. Cần kiểm tra giấy phép trước khi phân phối lại.
+1. Tạo tập phân loại tin từ ViFactCheck (MIT). Claim `SUPPORTED` dùng làm mẫu thật, claim `REFUTED` dùng làm mẫu sai. Ghi rõ đây là dữ liệu dẫn xuất.
+2. Tạo dữ liệu tổng hợp từ Wikipedia tiếng Việt (CC-BY-SA) và ViWikiFC: dùng LLM sửa câu đúng (đổi số liệu, ngày tháng, nhân vật, đảo ý, thêm giọng giật gân) để có câu sai. Mẫu tạo ra được gắn `label_origin=synthetic` và chỉ dùng trong tập train. Dữ liệu dẫn xuất từ Wikipedia phải giữ giấy phép CC-BY-SA.
+3. Nhóm tự viết và tự gán nhãn dữ liệu của mình. Mẫu cho dạng tin này dựa trên kiến thức chung, không sao chép nội dung có bản quyền.
 
 ## Giai đoạn 2 — Model phân loại tin
 
@@ -50,7 +43,7 @@ Kết luận: TF-IDF học theo từ vựng và nguồn. Sang nguồn khác ho�
 
 ## Giai đoạn 3 — Fact-check bằng RAG + NLI
 
-- Lập chỉ mục kho tin chính thống (RSS + binhvq) theo cách lai: BGE-M3 (dense) kết hợp BM25, rồi sắp xếp lại bằng `BAAI/bge-reranker-v2-m3`.
+- Lập chỉ mục kho bằng chứng có giấy phép mở (Wikipedia tiếng Việt, ngữ cảnh trong ViFactCheck/ViWikiFC) theo cách lai: BGE-M3 (dense) kết hợp BM25, rồi sắp xếp lại bằng `BAAI/bge-reranker-v2-m3`.
 - Phân loại quan hệ claim–bằng chứng bằng model NLI, fine-tune trên `claims_train.csv` (ViFactCheck + ViWikiFC, khoảng 22.000 mẫu). Model này thay `qwen2.5:3b` ở bước kết luận, nhanh hơn và cho kết quả lặp lại được.
 - Chỉ dùng LLM lớn hơn (`qwen2.5:7b`/`14b`) để viết phần giải thích.
 
@@ -62,4 +55,4 @@ Kết luận: TF-IDF học theo từ vựng và nguồn. Sang nguồn khác ho�
 ## Giai đoạn 5 — Độ bền vững
 
 - Chuẩn hóa văn bản không dấu, teencode và ký tự Unicode dễ nhầm. Tạo bộ test biến thể để đo khả năng chống né tránh.
-- Theo dõi hiện tượng trôi dữ liệu (drift): chấm định kỳ trên tin RSS mới. Nếu tỉ lệ dự đoán `fake` trên tin báo chính thống tăng thì cần train lại.
+- Theo dõi hiện tượng trôi dữ liệu (drift): chấm định kỳ trên dữ liệu mới có giấy phép. Nếu phân phối điểm thay đổi rõ thì cần train lại.

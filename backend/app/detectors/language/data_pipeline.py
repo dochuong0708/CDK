@@ -38,11 +38,9 @@ SPLITS = ("train", "val", "test")
 NEWS_LABELS = ("fake", "real")
 CLAIM_LABELS = ("SUPPORTED", "REFUTED", "NEI")
 MIN_NEWS_CHARS = 20
-DEFAULT_RSS_MIN_CHARS = 400
 
 # Ý nghĩa nhãn lấy từ dataset card của từng bộ; nhãn lạ sẽ báo lỗi thay vì đoán.
 LOCAL_FAKE_NEWS_LABELS = {"0": "fake", "1": "real"}
-REINTEL_LABELS = {"0": "real", "1": "fake"}
 VIFACTCHECK_LABELS = {"0": "SUPPORTED", "1": "REFUTED", "2": "NEI"}
 VIWIKIFC_LABELS = {
     "supports": "SUPPORTED",
@@ -51,8 +49,6 @@ VIWIKIFC_LABELS = {
 }
 
 HF_SOURCES: dict[str, tuple[str, tuple[str, ...]]] = {
-    # Split test của ReINTEL không có nhãn nên không tải.
-    "reintel": ("ReliableAI/ReINTEL", ("data/train-00000-of-00001.parquet",)),
     "vifactcheck": (
         "tranthaihoa/vifactcheck",
         (
@@ -63,9 +59,25 @@ HF_SOURCES: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
     "viwikifc": ("High-Will/ViWikiFC", ("data/train.csv", "data/dev.csv", "data/test.csv")),
 }
-NEWS_SOURCES = ("fake_news_data", "reintel", "rss")
+# Chỉ dùng bộ dữ liệu có giấy phép mở rõ ràng. Không thêm bộ không ghi giấy phép
+# hoặc phải xin tác giả (ví dụ ReINTEL, VFND, binhvq_news_vi) hay nội dung báo chí có bản quyền.
+DATASET_LICENSES: dict[str, dict[str, str]] = {
+    "vifactcheck": {
+        "license": "MIT",
+        "url": "https://huggingface.co/datasets/tranthaihoa/vifactcheck",
+        "attribution": "Tran, Tran, Tran, Nguyen. ViFactCheck (AAAI-25)",
+    },
+    "viwikifc": {
+        "license": "CC-BY-4.0",
+        "url": "https://huggingface.co/datasets/High-Will/ViWikiFC",
+        "attribution": "Le, To, Nguyen, Nguyen. ViWikiFC; nội dung gốc từ Wikipedia tiếng Việt",
+    },
+}
 CLAIM_SOURCES = ("vifactcheck", "viwikifc")
-DEFAULT_SOURCES = (*NEWS_SOURCES, *CLAIM_SOURCES)
+# Dữ liệu cục bộ chưa rõ giấy phép: chỉ bật bằng --sources khi chủ dự án đã xác nhận quyền sử dụng.
+OPT_IN_SOURCES = ("fake_news_data",)
+DEFAULT_SOURCES = CLAIM_SOURCES
+SUPPORTED_SOURCES = (*CLAIM_SOURCES, *OPT_IN_SOURCES)
 
 
 @dataclass
@@ -117,13 +129,6 @@ def map_label(mapping: dict[str, str], raw: object, dataset: str) -> str:
     raise ValueError(f"{dataset}: nhãn '{raw}' không nằm trong bảng quy đổi {sorted(mapping)}")
 
 
-def _iso_timestamp(value: object) -> str:
-    try:
-        return datetime.fromtimestamp(float(value), tz=UTC).isoformat()
-    except (TypeError, ValueError, OverflowError, OSError):
-        return ""
-
-
 # ---------------------------------------------------------------- chuyển từng nguồn về schema chung
 
 
@@ -137,46 +142,6 @@ def local_fake_news_records(rows: Iterable[dict[str, Any]], prefix: str) -> Iter
             text=text,
             label=map_label(LOCAL_FAKE_NEWS_LABELS, row.get("Label"), "Fake_news_data"),
             dataset="fake_news_data",
-        )
-
-
-def reintel_records(rows: Iterable[dict[str, Any]]) -> Iterator[NewsRecord]:
-    for row in rows:
-        if row.get("label") is None:
-            continue
-        text = clean_text(str(row.get("post_message") or ""))
-        if len(text) < MIN_NEWS_CHARS:
-            continue
-        user = str(row.get("user_name") or "").strip()
-        yield NewsRecord(
-            id=f"reintel-{row.get('id')}",
-            text=text,
-            label=map_label(REINTEL_LABELS, row.get("label"), "ReINTEL"),
-            dataset="reintel",
-            source=f"reintel-user:{user}" if user else "",
-            published_at=_iso_timestamp(row.get("timestamp_post")),
-        )
-
-
-def rss_records(
-    rows: Iterable[dict[str, Any]], min_chars: int = DEFAULT_RSS_MIN_CHARS
-) -> Iterator[NewsRecord]:
-    """Tin từ báo chính thống: nhãn ``real`` yếu (weak label), không phải gán nhãn thủ công."""
-    for row in rows:
-        text = clean_text(str(row.get("text") or ""))
-        url = str(row.get("url") or "").strip()
-        if len(text) < min_chars or not url:
-            continue
-        yield NewsRecord(
-            id="rss-" + hashlib.sha1(url.encode("utf-8")).hexdigest()[:16],
-            text=text,
-            label="real",
-            dataset="rss",
-            source=str(row.get("publisher") or ""),
-            title=clean_text(str(row.get("title") or "")),
-            url=url,
-            published_at=str(row.get("published_at") or ""),
-            label_origin="weak",
         )
 
 
@@ -498,26 +463,12 @@ def leaked_sources(splits: dict[str, Sequence[Record]]) -> set[str]:
 # ---------------------------------------------------------------- điều phối
 
 
-def load_news(
-    sources: Sequence[str], raw_dir: Path, rss_file: Path, rss_min_chars: int,
-    revision: str, force: bool, files: dict[str, str],
-) -> list[NewsRecord]:
+def load_news(sources: Sequence[str], files: dict[str, str]) -> list[NewsRecord]:
     records: list[NewsRecord] = []
     if "fake_news_data" in sources:
         for path in sorted(LOCAL_FAKE_NEWS_DIR.glob("*.csv")):
             files[str(path.relative_to(REPO_ROOT))] = sha256_file(path)
             records.extend(local_fake_news_records(read_csv_rows(path), path.stem))
-    if "reintel" in sources:
-        for path in fetch_hf_files("reintel", raw_dir, revision, force):
-            files[f"reintel/{path.name}"] = sha256_file(path)
-            columns = ("id", "post_message", "user_name", "timestamp_post", "label")
-            records.extend(reintel_records(read_parquet_rows(path, columns)))
-    if "rss" in sources:
-        if rss_file.exists():
-            files[str(rss_file)] = sha256_file(rss_file)
-            records.extend(rss_records(read_csv_rows(rss_file), rss_min_chars))
-        else:
-            print(f"Bỏ qua rss: chưa có {rss_file} (chạy rss_crawler trước).")
     return records
 
 
@@ -567,15 +518,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--sources",
         default=",".join(DEFAULT_SOURCES),
-        help=f"Danh sách nguồn, phân tách bằng dấu phẩy. Mặc định: {','.join(DEFAULT_SOURCES)}",
+        help=(
+            f"Danh sách nguồn, phân tách bằng dấu phẩy. Mặc định: {','.join(DEFAULT_SOURCES)}."
+            f" Nguồn chỉ bật khi đã xác nhận giấy phép: {','.join(OPT_IN_SOURCES)}"
+        ),
     )
     parser.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
-    parser.add_argument("--rss-file", type=Path, default=None, help="Mặc định: <raw-dir>/rss/news_rss.csv")
-    parser.add_argument(
-        "--rss-min-chars", type=int, default=DEFAULT_RSS_MIN_CHARS,
-        help="Bỏ tin RSS ngắn hơn ngưỡng này (tin chỉ có tóm tắt, chưa có toàn văn).",
-    )
     parser.add_argument("--ratios", type=float, nargs=3, default=(0.8, 0.1, 0.1), metavar=("TRAIN", "VAL", "TEST"))
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--near-dup-threshold", type=float, default=0.85)
@@ -588,10 +537,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> dict[str, Any]:
     args = parse_args(argv)
     sources = [s.strip() for s in args.sources.split(",") if s.strip()]
-    unknown = set(sources) - set(DEFAULT_SOURCES)
+    unknown = set(sources) - set(SUPPORTED_SOURCES)
     if unknown:
         raise SystemExit(f"Nguồn không hỗ trợ: {sorted(unknown)}")
-    rss_file = args.rss_file or args.raw_dir / "rss" / "news_rss.csv"
     files: dict[str, str] = {}
 
     manifest: dict[str, Any] = {
@@ -602,22 +550,17 @@ def main(argv: Sequence[str] | None = None) -> dict[str, Any]:
             "seed": args.seed,
             "near_dup_threshold": args.near_dup_threshold,
             "claim_near_dup_threshold": args.claim_near_dup_threshold,
-            "rss_min_chars": args.rss_min_chars,
             "hf_revision": args.hf_revision,
         },
         "label_maps": {
             "fake_news_data": LOCAL_FAKE_NEWS_LABELS,
-            "reintel": REINTEL_LABELS,
             "vifactcheck": VIFACTCHECK_LABELS,
             "viwikifc": VIWIKIFC_LABELS,
-            "rss": "weak label: real",
         },
+        "licenses": {name: DATASET_LICENSES[name] for name in sources if name in DATASET_LICENSES},
     }
 
-    news = load_news(
-        sources, args.raw_dir, rss_file, args.rss_min_chars, args.hf_revision,
-        args.force_download, files,
-    )
+    news = load_news(sources, files)
     if news:
         manifest["news"] = process(
             news, "news", NewsRecord, news_dedup_key, args.near_dup_threshold, 5,
