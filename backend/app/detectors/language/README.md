@@ -61,6 +61,21 @@ Lệnh train SMS (ham an toàn, spam rủi ro; tự chia train/test có stratify
 
 python -m app.detectors.language.train ..\data\TEXT\SMS_data\vi_dataset.csv --output data\models\vietnamese-sms-risk.joblib
 
+Pipeline dữ liệu (chỉ dùng dữ liệu có giấy phép mở)
+
+Lộ trình nâng cấp chi tiết nằm trong ROADMAP.md. Mặc định pipeline chỉ tải hai bộ có giấy phép rõ ràng:
+- ViFactCheck (MIT): https://huggingface.co/datasets/tranthaihoa/vifactcheck
+- ViWikiFC (CC-BY-4.0, bắt buộc ghi nguồn khi dùng): https://huggingface.co/datasets/High-Will/ViWikiFC
+
+Không dùng bộ không ghi giấy phép hoặc phải xin tác giả (ReINTEL, VFND, binhvq_news_vi). Không thu thập nội dung báo điện tử, vì các báo ghi "cấm sao chép nếu không có sự chấp thuận bằng văn bản".
+
+python -m pip install -r requirements-data.txt
+python -m app.detectors.language.data_pipeline
+
+Kết quả gồm claims_{train,val,test}.csv (nhãn SUPPORTED/REFUTED/NEI) và manifest.json (ghi cấu hình, SHA-256 file đầu vào, giấy phép và thông tin ghi nguồn). Bảng quy đổi nhãn: ViFactCheck 0=SUPPORTED, 1=REFUTED, 2=NEI; ViWikiFC Supports/Refutes/Not_Enough_Information.
+
+Fake_news_data trong repo chưa rõ nguồn và giấy phép nên không nằm trong mặc định. Chỉ bật bằng --sources vifactcheck,viwikifc,fake_news_data khi đã xác nhận được quyền sử dụng. Khi bật, pipeline sinh thêm news_{train,val,test}.csv (fake/real).
+
 Nguồn dữ liệu tham khảo
 
 - UIT-NLP: tìm UIT-ViHSD và UIT-ViCTSD trên GitHub/Hugging Face; kiểm tra nhãn và giấy phép của từng bộ trước khi dùng.
