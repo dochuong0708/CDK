@@ -1,0 +1,4 @@
+# Optional: Vietnamese semantic embeddings for the style classifier and RAG cosine similarity.
+# Without these packages DeepGuard falls back to TF-IDF character n-grams.
+-r requirements.txt
+sentence-transformers>=3.0,<6

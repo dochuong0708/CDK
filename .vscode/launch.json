@@ -2,38 +2,20 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "DeepGuard Detection API (debug)",
+      "name": "DeepGuard Agent (debug)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/backend/app/main.py",
+      "module": "app.agent.cli",
       "cwd": "${workspaceFolder}/backend",
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
         "PYTHONPATH": "${workspaceFolder}/backend",
         "DEEPGUARD_DB_PATH": "${workspaceFolder}/data/deepguard.db",
-        "DEEPGUARD_UPLOAD_DIR": "${workspaceFolder}/data/uploads"
+        "OLLAMA_HOST": "http://localhost:11434",
+        "DEEPGUARD_AGENT_MODEL": "qwen2.5:3b"
       },
-      "preLaunchTask": "detection-api: start backend"
-    },
-    {
-      "name": "DeepGuard Dashboard (debug)",
-      "type": "pwa-chrome",
-      "request": "launch",
-      "url": "http://127.0.0.1:5173",
-      "webRoot": "${workspaceFolder}/frontend",
-      "preLaunchTask": "deepguard-dashboard: start dev server"
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Debug All Services",
-      "configurations": [
-        "DeepGuard Detection API (debug)",
-        "DeepGuard Dashboard (debug)"
-      ],
-      "preLaunchTask": "Debug All Services",
-      "stopAll": true
+      "preLaunchTask": "backend: install dependencies"
     }
   ]
 }

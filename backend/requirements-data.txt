@@ -1,0 +1,4 @@
+# Dependencies for the data pipeline (app.detectors.language.data_pipeline).
+-r requirements.txt
+numpy>=1.26
+pyarrow>=15

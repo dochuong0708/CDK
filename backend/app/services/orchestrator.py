@@ -2,6 +2,7 @@ from pathlib import Path
 from app.detectors.image.image_detector import ImageDetector
 from app.detectors.audio.audio_detector import AudioDetector
 from app.detectors.language.language_detector import LanguageDetector
+from app.models.fact_checking import FactCheckReport
 
 class DetectorOrchestrator:
     def __init__(self):
@@ -9,8 +10,8 @@ class DetectorOrchestrator:
         self.audio_detector = AudioDetector()
         self.language_detector = LanguageDetector()
 
-    def analyze_text(self, text: str):
-        return self.language_detector.analyze(text)
+    def analyze_text(self, text: str, fact_report: FactCheckReport | None = None):
+        return self.language_detector.analyze(text, fact_report=fact_report)
 
     def analyze_image(self, path: Path):
         return self.image_detector.analyze(path)
