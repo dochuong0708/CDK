@@ -51,6 +51,19 @@
         "PYTHONUTF8": "1",
         "MPLCONFIGDIR": "${workspaceFolder}/backend/outputs/mpl-cache"
       }
+    },
+    {
+      "name": "Audio Agent: weeks 2-5 (LangGraph + memory)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/backend/run_audio_agent.py",
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONUTF8": "1"
+      }
     }
   ],
   "compounds": [

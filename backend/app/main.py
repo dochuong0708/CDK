@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 from starlette.concurrency import run_in_threadpool
@@ -8,9 +9,21 @@ from app.db.store import AnalysisStore
 from app.models.schemas import AnalysisList, Modality, TextRequest
 from app.services.orchestrator import DetectorOrchestrator
 from app.detectors.audio.audio_detector import AudioUnavailable
+from app.api.routes.agent import router as agent_router, close_service
+from app.api.routes.conversations import router as conversations_router
+from app.api.routes.master import router as master_router
 
-app = FastAPI(title='DeepGuard API Phân tích', version='0.1.0')
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    close_service()
+
+
+app = FastAPI(title='DeepGuard API Phân tích', version='0.3.0', lifespan=lifespan)
 app.include_router(health_router)
+app.include_router(agent_router)
+app.include_router(conversations_router)
+app.include_router(master_router)
 
 store = AnalysisStore(os.getenv('DEEPGUARD_DB_PATH', './data/deepguard.db'))
 orchestrator = DetectorOrchestrator()

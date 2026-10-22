@@ -1,5 +1,7 @@
 DeepGuard
 
+Kế hoạch mới — phần Audio Agent đến tuần 5: [bảng đối chiếu công việc, kiến trúc, giới hạn và hướng dẫn chạy từng lệnh](docs/AUDIO_AGENT_WEEK5.md). Bổ sung LangGraph, SQLite/Qdrant memory, tool MFCC/WAV/MP3 và HTTP/SSE/WebSocket. Chạy từ thư mục gốc bằng `.\.venv\Scripts\python.exe .\backend\run_audio_agent.py`, sau khi cài `backend/requirements-agent.txt`. Mô hình CNN hiện có vẫn là demo chưa xác nhận chất lượng.
+
 Mô-đun giọng nói thật/giả và XAI: xem [hướng dẫn Audio](docs/AUDIO.md) để chuẩn bị dữ liệu, huấn luyện CNN, đánh giá và chạy giao diện. Cần checkpoint đã huấn luyện; bản mã nguồn không kèm trọng số phát hiện deepfake.
 
 Chạy với dữ liệu ASVspoof: [hướng dẫn từng bước trên Windows](docs/ASVSPOOF.md), gồm chuẩn bị ASVspoof 2019 LA, kiểm tra dữ liệu, chạy thử nhỏ, huấn luyện đầy đủ và xuất XAI.

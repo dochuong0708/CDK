@@ -12,4 +12,5 @@ data/uploads/*
 backend/models/
 backend/outputs/
 data/audio/
+data/agent/
 __pycache__/
