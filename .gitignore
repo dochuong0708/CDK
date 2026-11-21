@@ -13,3 +13,4 @@ data/uploads/*
 !data/uploads/.gitkeep
 .copilot-azure/
 data/
+backend/app/detectors/image/test_data/

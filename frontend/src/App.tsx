@@ -197,6 +197,7 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
           label: data.label || 'Likely authentic',
           riskScore: data.riskScore || 50,
           confidence: data.confidence || 0.65,
+          // Kiểm tra xem data.evidence có tồn tại không, nếu không gán mặc định
           evidence: data.evidence || ['Đã rà soát siêu dữ liệu và cấu trúc tệp'],
           detector: data.detector || `${appMode}-heuristic-v1`,
           input: selectedFile.name,
@@ -208,6 +209,8 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
             metadataStatus: 'Đã phân tích cấu trúc nhị phân',
             artifactsDetected: ['Đang sử dụng detector mẫu mô phỏng'],
           },
+          // Lưu thêm object xai nếu API trả về (tùy chọn)
+          xai: data.xai || null,
         })
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Lỗi phân tích tệp'
@@ -311,6 +314,31 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
   const mediaRisk = mediaResult ? mediaResult.riskScore : 0
   const mediaStrokeDashoffset = circumference - (mediaRisk / 100) * circumference
   const mediaStrokeColor = mediaRisk >= 65 ? '#ef4444' : mediaRisk >= 35 ? '#f59e0b' : '#10b981'
+
+  // --- Logic mới xử lý Base64 Images từ object xai ---
+  let textualEvidence: string[] = []
+  let xaiHeatmapBase64: string | null = null
+  let xaiBboxBase64: string | null = null
+
+  if (mediaResult) {
+    textualEvidence = (mediaResult.evidence || []).filter(
+      (e: string) => !e.includes('base64,') && !e.startsWith('XAI_') && e.length < 300
+    )
+
+    if (mediaResult.xai) {
+      const heatMap = mediaResult.xai.heatmap_base64
+      const annotated = mediaResult.xai.annotated_base64
+
+      xaiHeatmapBase64 = heatMap
+        ? (heatMap.startsWith('data:image') ? heatMap : `data:image/jpeg;base64,${heatMap}`)
+        : null
+
+      xaiBboxBase64 = annotated
+        ? (annotated.startsWith('data:image') ? annotated : `data:image/jpeg;base64,${annotated}`)
+        : null
+    }
+  }
+  // -------------------------------------------------------------
 
   return (
     <div className="app-container">
@@ -1188,13 +1216,13 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                     <strong>{mediaResult.riskScore}/100</strong>.
                   </p>
 
-                  {/* Evidence Items */}
+                  {/* Evidence Items (Only Textual) */}
                   <div style={{ marginTop: 14 }}>
                     <span style={{ fontSize: '0.84rem', color: '#94a3b8', fontWeight: 600 }}>
                       Bằng chứng sàng lọc ghi nhận:
                     </span>
                     <ul style={{ listStyle: 'none', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {mediaResult.evidence.map((ev, i) => (
+                      {textualEvidence.map((ev, i) => (
                         <li
                           key={`ev-${i}`}
                           style={{
@@ -1203,14 +1231,49 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                             alignItems: 'flex-start',
                             gap: 8,
                             color: '#cbd5e1',
+                            overflow: 'hidden',
                           }}
                         >
                           <CheckCircle2 size={15} color="var(--primary)" style={{ flexShrink: 0, marginTop: 3 }} />
-                          <span>{ev}</span>
+                          <span style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{ev}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
+
+                  {/* XAI VISUALIZATION MODULE */}
+                  {(xaiHeatmapBase64 || xaiBboxBase64) && (
+                    <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                      <span style={{ fontSize: '0.9rem', color: '#cbd5e1', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                        <Search size={16} color="#fbbf24" />
+                        Trực quan hóa khu vực nghi vấn (Explainable AI)
+                      </span>
+                      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                        {xaiHeatmapBase64 && (
+                          <div style={{ flex: 1, minWidth: '200px' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 6 }}>Bản đồ nhiệt Grad-CAM</div>
+                            <img 
+                              src={xaiHeatmapBase64} 
+                              alt="Heatmap" 
+                              style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} 
+                            />
+                          </div>
+                        )}
+                        {xaiBboxBase64 && (
+                          <div style={{ flex: 1, minWidth: '200px' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 6 }}>Vùng phát hiện bất thường</div>
+                            <img 
+                              src={xaiBboxBase64} 
+                              alt="Bounding Box" 
+                              style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} 
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {/* END XAI VISUALIZATION */}
+
                 </div>
               </div>
 
@@ -1267,7 +1330,8 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
       <footer className="app-footer">
         <p>DeepGuard AI v2.5 — Nghiên cứu phân tích & Phát hiện tin giả đa phương tiện</p>
         <p style={{ marginTop: 4 }}>
-          Tích hợp 3 Chế độ: Phân tích Văn bản (NLP & Fact-Check), Phân tích Hình ảnh & Âm thanh (Biểu trưng)
+          Tích hợp 3 Chế độ: Phân tích V
+          ăn bản (NLP & Fact-Check), Phân tích Hình ảnh & Âm thanh (Biểu trưng)
         </p>
       </footer>
     </div>

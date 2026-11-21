@@ -72,13 +72,13 @@ Trên thanh điều hướng đầu trang, bạn có thể chuyển đổi linh 
   - Đối chiếu fact-check với báo chí chính thống (VnExpress, Tuổi Trẻ, Thanh Niên...).
   - Tổng kết điểm rủi ro toàn bài và đưa ra khuyến nghị.
 
-### 2. 🖼️ Chế độ Phân tích Hình ảnh (Biểu trưng / Prototype)
+### 2. 🖼️ Chế độ Phân tích Hình ảnh
 * **Kéo thả hoặc tải ảnh lên:** Hỗ trợ JPG, PNG, WEBP.
-* **Tệp mẫu mô phỏng:** 
-  - `Giấy triệu tập Công an đóng dấu đỏ giả mạo`: Rà soát vết ghép đè con dấu & nén pixel.
-  - `Ảnh chân dung AI (Midjourney/Deepfake)`: Nhận diện bất đối xứng khuôn mặt & phông nền.
-  - `Ảnh hiện trường thực tế`: Kiểm tra siêu dữ liệu EXIF máy ảnh.
-* **Hiển thị:** Điểm rủi ro can thiệp kỹ thuật số, phân tích siêu dữ liệu EXIF header và nhãn detector mẫu `image-heuristic-v1`.
+* **Phân tích:** Backend kết hợp ConvNeXt-Tiny local (`backend/models/detector.pt`) với ViT Hugging Face, EXIF và FFT. Điểm cuối cùng là trung bình 50/50 giữa ConvNeXt-Tiny và điểm đa tín hiệu; điểm đa tín hiệu dùng trọng số 70% ViT, 15% EXIF và 15% FFT.
+* Checkpoint local phải là ConvNeXt-Tiny đã huấn luyện cho hai lớp `real`/`fake`; checkpoint ResNet18 hiện có không tương thích và cần được thay bằng checkpoint ConvNeXt trước khi endpoint phân tích ảnh chạy được.
+* Ảnh tải lên được phân tích trực tiếp từ bytes, không ghi thành tệp tạm; công cụ agent đọc bytes từ tệp local. Luồng âm thanh vẫn giữ cách lưu tệp hiện tại.
+* **Cài đặt chạy local:** Chạy `python -m pip install -r requirements.txt -r requirements-image.txt` trong thư mục `backend`.
+* Hugging Face tải model khoảng 300–400 MB khi phân tích ảnh lần đầu; lần tiếp theo dùng cache. Nếu model không tải/chạy được hoặc checkpoint local thiếu, API báo lỗi thay vì âm thầm bỏ qua một detector.
 
 ### 3. 🎙️ Chế độ Phân tích Âm thanh (Biểu trưng / Prototype)
 * **Kéo thả hoặc tải tệp âm thanh:** Hỗ trợ MP3, WAV, M4A, FLAC.
@@ -120,6 +120,7 @@ python -m app.agent.cli
 - `backend/app/services/risk_fusion.py`: Tách và kết hợp 3 trục rủi ro: Hình thức (style), Lừa đảo (fraud), Sự thật (factuality).
 - `backend/app/services/fact_checking.py`: RAG fact-check: tìm kiếm, xếp hạng snippet bằng cosine similarity, LLM đánh giá; báo cáo lưu vào SQLite (`/api/fact-checks`).
 - `backend/data/models/`: Chứa các mô hình học máy đã huấn luyện.
+- `backend/app/detectors/image/`: Detector ảnh ConvNeXt-Tiny và phân tích màu sắc; checkpoint tương thích với kiến trúc ConvNeXt được đặt tại `backend/models/detector.pt`.
 - `backend/tests/`: Bộ kiểm thử tự động pytest.
 
 ---

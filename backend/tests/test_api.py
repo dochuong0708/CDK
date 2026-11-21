@@ -1,7 +1,10 @@
+from datetime import datetime
+
 from fastapi.testclient import TestClient
 import app.main as main
 from app.main import app
 from app.models.fact_checking import ClaimFactCheck, FactCheckReport
+from app.models.schemas import Analysis
 
 client = TestClient(app)
 
@@ -35,6 +38,53 @@ def test_fact_check_text(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()['claims'][0]['verdict'] == 'supported'
+
+
+def test_corrupt_image_upload_returns_400():
+    response = client.post(
+        '/api/analyze/media',
+        files={'file': ('broken.png', b'not an image', 'image/png')},
+        data={'modality': 'Image'},
+    )
+
+    assert response.status_code == 400
+    assert 'not a valid supported image' in response.json()['detail']
+
+
+def test_image_upload_is_analyzed_from_bytes_without_saving(
+    monkeypatch, tmp_path
+):
+    uploaded = {}
+    result = Analysis(
+        analysisId="image-upload-test",
+        modality="Image",
+        label="Uncertain",
+        riskScore=50,
+        confidence=0.5,
+        evidence=[],
+        detector="test-detector",
+        input="sample.png",
+        createdAt=datetime.now(),
+    )
+
+    def analyze_image(file_bytes: bytes, filename: str) -> Analysis:
+        uploaded["file_bytes"] = file_bytes
+        uploaded["filename"] = filename
+        return result
+
+    monkeypatch.setattr(main.orchestrator, "analyze_image", analyze_image)
+    monkeypatch.setattr(main.store, "add", lambda analysis: analysis)
+    monkeypatch.setattr(main, "upload_dir", tmp_path)
+
+    response = client.post(
+        "/api/analyze/media",
+        files={"file": ("sample.png", b"image bytes", "image/png")},
+        data={"modality": "Image"},
+    )
+
+    assert response.status_code == 200
+    assert uploaded == {"file_bytes": b"image bytes", "filename": "sample.png"}
+    assert not (tmp_path / "sample.png").exists()
 
 
 def test_article_analysis(monkeypatch):

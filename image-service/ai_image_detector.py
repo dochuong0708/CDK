@@ -67,9 +67,9 @@ def patch_transform():
 
 
 def build_model(pretrained=True):
-    weights = models.ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
-    model = models.convnext_tiny(weights=weights)
-    model.classifier[2] = nn.Linear(model.classifier[2].in_features, 2)
+    weights = models.ResNet18_Weights.DEFAULT if pretrained else None
+    model = models.resnet18(weights=weights)
+    model.fc = nn.Linear(model.fc.in_features, 2)
     return model
 
 

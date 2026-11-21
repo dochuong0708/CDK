@@ -15,14 +15,14 @@ from ai_image_detector import (
     predict_image_prob,
 )
 
-MODEL_PATH = Path("detector.pt")
+MODEL_PATH = Path(__file__).resolve().parent / "detector.pt"
 device = get_device()
 
 
 def load_model():
     if not MODEL_PATH.exists():
         return None, 0
-    ckpt = torch.load(MODEL_PATH, map_location=device)
+    ckpt = torch.load(MODEL_PATH, map_location=device, weights_only=True)
     model = build_model(pretrained=False)
     model.load_state_dict(ckpt["state_dict"])
     return model.to(device).eval(), ckpt["fake_idx"]

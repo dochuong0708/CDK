@@ -13,8 +13,8 @@ class DetectorOrchestrator:
     def analyze_text(self, text: str, fact_report: FactCheckReport | None = None):
         return self.language_detector.analyze(text, fact_report=fact_report)
 
-    def analyze_image(self, path: Path):
-        return self.image_detector.analyze(path)
+    def analyze_image(self, file_bytes: bytes, filename: str):
+        return self.image_detector.analyze(file_bytes, filename)
 
     def analyze_audio(self, path: Path):
         return self.audio_detector.analyze(path)

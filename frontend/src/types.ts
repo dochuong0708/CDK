@@ -105,6 +105,10 @@ export interface MediaAnalysisResult {
   createdAt: string
   previewUrl?: string
   fileSize?: string
+  xai?: {
+    heatmap_base64: string
+    annotated_base64: string
+  } | null
   details?: {
     anomalyType?: string
     deepfakeScore?: number

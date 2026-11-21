@@ -4,12 +4,11 @@ một mô hình duy nhất. Ý tưởng: mỗi tín hiệu có điểm mạnh/y�
 lại giúp bù trừ sai số cho nhau.
 
 BA TÍN HIỆU:
-1. Mô hình ViT (dima806/ai_vs_human_generated_image_detection) - đọc NỘI DUNG ảnh,
-   nhưng có thể bị đánh lừa bởi ảnh lạ với dữ liệu huấn luyện của nó.
+1. Mô hình ConvNeXt/ResNet cục bộ - đọc NỘI DUNG ảnh từ checkpoint detector.pt.
 2. Metadata EXIF - ảnh thật chụp từ máy ảnh/điện thoại thường có thông tin máy ảnh,
    ống kính, ngày giờ... Ảnh AI tạo ra hoặc đã qua chỉnh sửa thường THIẾU các
-   trường này. Đây là tín hiệu không liên quan gì đến nội dung ảnh, nên không bị
-   đánh lừa bởi cùng điểm yếu của mô hình ViT.
+   trường này. Đây là tín hiệu độc lập với nội dung ảnh, nên không bị đánh lừa
+   bởi cùng điểm yếu của mô hình cục bộ.
 3. Phân tích tần số (FFT) - ảnh AI thường để lại hoạ tiết lặp lại ở tần số cao
    mà mắt thường khó thấy nhưng có thể đo được bằng biến đổi Fourier.
 
@@ -30,11 +29,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ExifTags
 
-from hf_image_detector import fake_probability as model_fake_probability
+import torch
+
+from ai_image_detector import build_model, get_device, predict_image_prob
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
-# Trọng số của từng tín hiệu khi kết hợp - mô hình ViT đáng tin nhất nên có
+# Trọng số của từng tín hiệu khi kết hợp - mô hình cục bộ đáng tin nhất nên có
 # trọng số cao nhất, hai tín hiệu kia chỉ đóng vai trò hỗ trợ/điều chỉnh.
 WEIGHTS = {"model": 0.70, "metadata": 0.15, "frequency": 0.15}
 
@@ -124,8 +125,25 @@ def combined_verdict(prob):
     return "Không chắc chắn - cần người xem xét"
 
 
-def analyze(image_path):
-    model_prob = model_fake_probability(image_path, use_tta=True)
+def _load_local_model():
+    model_path = Path(__file__).resolve().with_name("detector.pt")
+    if not model_path.is_file():
+        raise FileNotFoundError(f"Không tìm thấy checkpoint cục bộ: {model_path}")
+
+    device = get_device()
+    checkpoint = torch.load(model_path, map_location=device, weights_only=True)
+    model = build_model(pretrained=False)
+    model.load_state_dict(checkpoint["state_dict"])
+    return model.to(device).eval(), device, checkpoint["fake_idx"]
+
+
+def analyze(image_path, model=None, device=None, fake_idx=None):
+    if model is None:
+        model, device, fake_idx = _load_local_model()
+    elif device is None:
+        device = get_device()
+    with Image.open(image_path) as source:
+        model_prob = predict_image_prob(model, source, device, fake_idx)
     meta_prob, meta_reason = check_metadata(image_path)
     freq_prob, freq_reason = check_frequency(image_path)
 
@@ -158,7 +176,7 @@ def predict(input_path):
     for p in paths:
         r = analyze(p)
         print(f"\n{p}")
-        print(f"  Mô hình ViT:        {r['model_prob']:.1%}")
+        print(f"  Mô hình cục bộ:     {r['model_prob']:.1%}")
         print(f"  Metadata EXIF:       {r['metadata_prob']:.1%}  ({r['metadata_reason']})")
         print(f"  Phân tích tần số:    {r['frequency_prob']:.1%}  ({r['frequency_reason']})")
         print(f"  --> Kết hợp:         {r['combined_prob']:.1%}  -> {r['verdict']}")
