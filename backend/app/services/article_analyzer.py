@@ -4,14 +4,18 @@ from uuid import uuid4
 
 from app.detectors.language.heuristics import find_suspicious_phrases, inspect_rules_detailed
 from app.detectors.language.model import LanguageModel
+from app.detectors.language.onnx_classifier import PhoBertOnnxClassifier
 from app.detectors.language.preprocessing import preprocess_text
 from app.detectors.language.style_classifier import EmbeddingStyleClassifier
 from app.models.fact_checking import FactCheckReport
 from app.services.fact_checking import FactChecker
+from app.services.local_rag import LocalRagFactChecker
 from app.services.risk_fusion import (
     combine_factuality,
     fuse,
+    fuse_multilayer_risk,
     noisy_or,
+    noisy_or_probabilities,
     report_factuality,
     risk_label,
 )
@@ -26,11 +30,15 @@ class ArticleAnalyzer:
         fact_checker: FactChecker | None = None,
         store: Any | None = None,
         style_classifier: EmbeddingStyleClassifier | None = None,
+        fraud_classifier: PhoBertOnnxClassifier | None = None,
+        rag_checker: LocalRagFactChecker | None = None,
     ):
         self.model = model or LanguageModel()
         self.fact_checker = fact_checker or FactChecker()
         self.store = store
         self.style_classifier = style_classifier or EmbeddingStyleClassifier()
+        self.fraud_classifier = fraud_classifier or PhoBertOnnxClassifier()
+        self.rag_checker = rag_checker or LocalRagFactChecker()
 
     def split_into_paragraphs(self, text: str) -> list[str]:
         raw_paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\r\n\s*\r\n", text) if p.strip()]
@@ -76,6 +84,13 @@ class ArticleAnalyzer:
 
         paragraphs_raw = self.split_into_paragraphs(cleaned_text)
         paragraph_analyses: list[dict[str, Any]] = []
+        verified_trusted_source = False
+        local_rag_active = False
+        matched_reference_urls: list[str] = []
+        fraud_rule_scores: list[float] = []
+        phobert_scores: list[float] = []
+        local_rag_risks: list[float] = []
+        active_ai_components: set[str] = set()
 
         for idx, p_text in enumerate(paragraphs_raw, start=1):
             preprocessed = preprocess_text(p_text)
@@ -83,12 +98,36 @@ class ArticleAnalyzer:
             suspicious_phrases = find_suspicious_phrases(p_text)
             style_prediction = self.style_classifier.predict(str(preprocessed["text"]))
             model_score = self.model.predict_score(str(preprocessed["text"]))
-
+            phobert_score = self.fraud_classifier.predict_score(str(preprocessed["text"]))
+            rag_result = self.rag_checker.check(str(preprocessed["text"]))
+            if style_prediction is not None:
+                active_ai_components.add("semantic_embedding")
+            if model_score is not None:
+                active_ai_components.add("legacy_fake_news_model")
+            if phobert_score is not None:
+                active_ai_components.add("phobert_onnx")
+            if rag_result.factuality_risk is not None:
+                active_ai_components.add("local_rag_nli")
             style_risk = noisy_or(
                 rules.style_score, style_prediction.sensational if style_prediction else None
             )
-            fraud_risk = noisy_or(
+            fraud_rule_score = noisy_or(
                 rules.fraud_score, style_prediction.scam if style_prediction else None
+            )
+            verified_trusted_source |= rag_result.verified_trusted_source
+            local_rag_active |= rag_result.factuality_risk is not None
+            matched_reference_urls.extend(rag_result.matched_reference_urls)
+            fraud_rule_scores.append(fraud_rule_score)
+            if phobert_score is not None:
+                phobert_scores.append(phobert_score)
+            if rag_result.factuality_risk is not None:
+                local_rag_risks.append(rag_result.factuality_risk)
+
+            fraud_risk = fraud_rule_score
+            if phobert_score is not None:
+                fraud_risk = noisy_or_probabilities([fraud_risk, phobert_score])
+            factuality_score = combine_factuality(
+                model_score, rag_result.factuality_risk, 0.8
             )
 
             issues = [ev for ev in rules.evidence if "Không tìm thấy" not in ev]
@@ -108,7 +147,11 @@ class ArticleAnalyzer:
                 "rule_score": round(rules.combined, 3),
                 "style_score": round(style_risk, 3),
                 "fraud_score": round(fraud_risk, 3),
-                "factuality_score": model_score,
+                "fraud_rule_score": round(fraud_rule_score, 3),
+                "factuality_score": factuality_score,
+                "phobert_fraud_score": phobert_score,
+                "matched_reference_urls": rag_result.matched_reference_urls,
+                "verified_trusted_source": rag_result.verified_trusted_source,
                 "suspicious_phrases": suspicious_phrases,
                 "issues": issues,
                 "claims": [],
@@ -122,6 +165,7 @@ class ArticleAnalyzer:
         if check_facts:
             try:
                 fact_report = self.fact_checker.check(cleaned_text[:25000])
+                active_ai_components.add("web_fact_check")
                 if self.store is not None:
                     fact_report = self.store.add_fact_check(fact_report, cleaned_text[:25000])
                 for claim in fact_report.claims:
@@ -151,17 +195,34 @@ class ArticleAnalyzer:
 
         for paragraph in paragraph_analyses:
             factuality = paragraph.pop("factuality_score")
-            risk = fuse(paragraph["style_score"], paragraph["fraud_score"], factuality)
+            if paragraph["phobert_fraud_score"] is not None or paragraph["verified_trusted_source"]:
+                risk = fuse_multilayer_risk(
+                    paragraph["style_score"],
+                    paragraph["fraud_rule_score"],
+                    paragraph["phobert_fraud_score"],
+                    factuality,
+                    paragraph["verified_trusted_source"],
+                )
+            else:
+                risk = fuse(paragraph["style_score"], paragraph["fraud_score"], factuality)
             paragraph["risk_score"] = round(risk.overall * 100)
             paragraph["label"] = risk.label
             paragraph["style_risk"] = round(risk.style_risk * 100)
             paragraph["style_label"] = risk.style_label
             paragraph["factuality_risk"] = (
-                None if factuality is None else round(factuality * 100)
+                None
+                if risk.factuality_risk is None
+                else round(risk.factuality_risk * 100)
             )
             paragraph["factuality_label"] = risk.factuality_label
             paragraph["fraud_risk"] = round(risk.fraud_risk * 100)
-            del paragraph["style_score"], paragraph["fraud_score"]
+            paragraph["phobert_fraud_score"] = (
+                None
+                if paragraph["phobert_fraud_score"] is None
+                else round(paragraph["phobert_fraud_score"] * 100)
+            )
+            paragraph.pop("verified_trusted_source")
+            del paragraph["style_score"], paragraph["fraud_score"], paragraph["fraud_rule_score"]
 
         # Thống kê tổng quan
         num_paragraphs = len(paragraph_analyses)
@@ -182,22 +243,65 @@ class ArticleAnalyzer:
         article_model = sum(model_scores) / len(model_scores) if model_scores else None
         fact_risk, fact_confidence = report_factuality(fact_report)
         article_factuality = combine_factuality(article_model, fact_risk, fact_confidence)
+        if local_rag_risks:
+            article_factuality = combine_factuality(
+                article_factuality, max(local_rag_risks), 0.8
+            )
         article_fraud = max(p["fraud_risk"] / 100 for p in paragraph_analyses)
-        breakdown = fuse(article_style, article_fraud, article_factuality)
+        article_fraud_rules = max(fraud_rule_scores, default=0.0)
+        article_phobert = max(phobert_scores, default=0.0)
+        has_local_fusion = article_phobert > 0 or local_rag_active
+        if has_local_fusion:
+            breakdown = fuse_multilayer_risk(
+                article_style,
+                article_fraud_rules,
+                article_phobert,
+                article_factuality,
+                True,
+            ) if verified_trusted_source else fuse_multilayer_risk(
+                article_style,
+                article_fraud_rules,
+                article_phobert,
+                article_factuality,
+            )
+        else:
+            breakdown = fuse(article_style, article_fraud, article_factuality)
+        article_fraud = breakdown.fraud_risk
         overall_risk = round(breakdown.overall * 100)
         style_risk_score = round(article_style * 100)
         factuality_risk_score = (
-            None if article_factuality is None else round(article_factuality * 100)
+            None
+            if breakdown.factuality_risk is None
+            else round(breakdown.factuality_risk * 100)
         )
         credibility_score = 100 - overall_risk
-        overall_label = risk_label(breakdown.overall)
+
+# Hieu chinh nguong phan loai khi Joblib la nguon danh gia duy nhat.
+        joblib_only = (
+            article_model is not None
+            and not has_local_fusion
+            and fact_risk is None
+            and article_style == 0
+            and article_fraud == 0
+        )
+
+        if joblib_only:
+            if article_model < 0.55:
+                overall_label = "SAFE"
+            elif article_model < 0.70:
+                overall_label = "SUSPICIOUS"
+            else:
+                overall_label = "DANGEROUS"
+        else:
+            overall_label = risk_label(breakdown.overall)
+        
 
         if overall_label == "DANGEROUS":
             verdict_title = "NGUY CƠ TIN GIẢ RẤT CAO / SAI SỰ THẬT"
         elif overall_label == "SUSPICIOUS":
             verdict_title = "CẢNH BÁO NGHI VẤN / THÔNG TIN CHƯA RÕ RÀNG"
         else:
-            verdict_title = "ĐỘ TIN CẬY CAO / CHƯA THẤY DẤU HIỆU BẤT THƯỜNG"
+            verdict_title = "MỨC RỦI RO THẤP / CHƯA VƯỢT NGƯỠNG CẢNH BÁO"
 
         # Tổng hợp kết luận chi tiết của Agent
         conclusion_parts: list[str] = []
@@ -218,10 +322,11 @@ class ArticleAnalyzer:
                 "hoặc nguồn tin chưa được kiểm chứng độc lập."
             )
         else:
-            conclusion_parts.append(
-                f"Bài viết có độ tin cậy tương đối tốt ({credibility_score}% tin cậy). "
-                "Các câu chữ chuẩn mực, không phát hiện dấu hiệu lừa đảo, giật gân hay mâu thuẫn sự thật lớn."
-            )
+                    conclusion_parts.append(
+                        f"Bài viết có điểm rủi ro {overall_risk}%, "
+                        "chưa vượt ngưỡng cảnh báo của hệ thống. "
+                        "Kết quả này không đồng nghĩa với việc nội dung đã được xác minh."
+                    )
 
         conclusion_parts.append(self._axes_sentence(breakdown))
 
@@ -262,6 +367,8 @@ class ArticleAnalyzer:
                 },
             },
             "paragraphs": paragraph_analyses,
+            "matched_reference_urls": list(dict.fromkeys(matched_reference_urls)),
+            "ai_components": sorted(active_ai_components),
             "claims": claims_data,
             "fact_check_error": fact_check_error,
             "fact_check_report_id": fact_report.reportId if fact_report else None,

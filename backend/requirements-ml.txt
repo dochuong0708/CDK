@@ -2,3 +2,7 @@
 # Without these packages DeepGuard falls back to TF-IDF character n-grams.
 -r requirements.txt
 sentence-transformers>=3.0,<6
+underthesea>=6.8
+optimum[onnxruntime]>=1.24,<2
+faiss-cpu>=1.8
+transformers>=4.46,<5

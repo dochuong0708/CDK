@@ -13,6 +13,8 @@ def test_text_analysis():
     response = client.post('/api/analyze/text', json={'text':'The committee approved the revised climate brief.'})
     assert response.status_code == 200
     assert response.json()['modality'] == 'Text'
+    assert 'phobert_fraud_score' in response.json()
+    assert response.json()['matched_reference_urls'] == []
 
 
 def test_fact_check_text(monkeypatch):
@@ -56,9 +58,12 @@ def test_article_analysis(monkeypatch):
     data = response.json()
     assert 'summary' in data
     assert 'paragraphs' in data
+    assert isinstance(data['ai_components'], list)
     assert len(data['paragraphs']) == 2
     assert data['summary']['overall_risk_score'] >= 0
     assert 'verdict_title' in data['summary']
+    assert 'matched_reference_urls' in data
+    assert 'phobert_fraud_score' in data['paragraphs'][0]
 
 
 def test_fact_check_is_saved_and_merged_into_text_analysis(monkeypatch):

@@ -1,4 +1,5 @@
 from app.detectors.language.detector import LanguageDetector
+from app.detectors.language.model import LanguageModel
 from app.detectors.language import preprocessing
 from app.detectors.language.preprocessing import preprocess_text, vectorize_text
 
@@ -9,6 +10,34 @@ def test_preprocessing_normalizes_unicode_and_extracts_indicators():
     assert result["text"].startswith("Chào")
     assert result["urls"] == ["https://bit.ly/abc"]
     assert result["phone_numbers"]
+
+
+def test_language_model_does_not_auto_load_unvalidated_local_artifact(monkeypatch):
+    monkeypatch.delenv("DEEPGUARD_LANGUAGE_MODEL_PATH", raising=False)
+
+    assert LanguageModel().model is None
+
+
+def test_official_news_sample_is_safe_without_an_explicit_classifier(monkeypatch):
+    from app.services.article_analyzer import ArticleAnalyzer
+
+    monkeypatch.delenv("DEEPGUARD_LANGUAGE_MODEL_PATH", raising=False)
+    monkeypatch.delenv("DEEPGUARD_PHOBERT_ONNX_DIR", raising=False)
+    monkeypatch.delenv("DEEPGUARD_REFERENCE_CORPUS", raising=False)
+    monkeypatch.delenv("DEEPGUARD_NLI_ONNX_DIR", raising=False)
+    text = (
+        "UBND thành phố Hà Nội vừa ban hành kế hoạch cao điểm về kiểm tra, kiểm soát thị trường "
+        "và bảo đảm an toàn vệ sinh thực phẩm dịp cuối năm và Tết Nguyên đán.\n\n"
+        "Theo đó, các đoàn kiểm tra liên ngành sẽ thanh tra cơ sở kinh doanh thực phẩm. "
+        "Cơ quan chức năng yêu cầu xử lý nghiêm các trường hợp vi phạm về nhãn mác.\n\n"
+        "Sở Y tế Hà Nội khuyến cáo người tiêu dùng chọn mua thực phẩm tại cửa hàng có giấy phép."
+    )
+
+    result = ArticleAnalyzer().analyze_article(text, check_facts=False)
+
+    assert result["summary"]["label"] == "SAFE"
+    assert result["summary"]["overall_risk_score"] < 30
+    assert result["ai_components"] == []
 
 
 def test_preprocessing_falls_back_when_tokenizers_are_unavailable(monkeypatch):

@@ -36,6 +36,13 @@ import {
 import type { SampleMediaItem } from './sampleData'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+const AI_COMPONENT_LABELS: Record<string, string> = {
+  semantic_embedding: 'Embedding ngữ nghĩa',
+  legacy_fake_news_model: 'Model tin giả cũ',
+  phobert_onnx: 'PhoBERT ONNX',
+  local_rag_nli: 'RAG + NLI cục bộ',
+  web_fact_check: 'Fact-check web',
+}
 
 const riskColor = (score: number | null) =>
   score === null ? '#94a3b8' : score >= 65 ? '#ef4444' : score >= 35 ? '#f59e0b' : '#10b981'
@@ -616,6 +623,31 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
 
                   <p className="verdict-conclusion-text">{result.summary.conclusion}</p>
 
+                  <div
+                    role="status"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 9,
+                      marginTop: 14,
+                      padding: '10px 12px',
+                      borderRadius: 6,
+                      background: 'rgba(15, 23, 42, 0.42)',
+                      color: 'var(--text-secondary)',
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    <Cpu size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      <strong style={{ color: 'var(--text-primary)' }}>Thành phần đã chạy: </strong>
+                      {result.ai_components.length > 0
+                        ? result.ai_components
+                            .map((component) => AI_COMPONENT_LABELS[component] || component)
+                            .join(' · ')
+                        : 'Chưa có mô hình AI; kết quả hiện dựa trên luật và heuristic.'}
+                    </span>
+                  </div>
+
                   {/* Stats Bar */}
                   <div className="stats-pills-bar">
                     <div className="stat-pill">
@@ -794,6 +826,9 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                               <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
                                 Hình thức: {paragraph.style_risk}% · Sự thật:{' '}
                                 {paragraph.factuality_risk === null ? 'chưa xác minh' : `${paragraph.factuality_risk}%`}
+                                {paragraph.phobert_fraud_score !== null && (
+                                  <> · PhoBERT: {paragraph.phobert_fraud_score}%</>
+                                )}
                               </span>
                             </div>
                           </div>
@@ -801,6 +836,19 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                           <p className="paragraph-content-text">
                             {renderHighlightedText(paragraph.text, paragraph.suspicious_phrases)}
                           </p>
+
+                          {paragraph.matched_reference_urls.length > 0 && (
+                            <div className="sources-list">
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                Nguồn tin cậy đối chứng:
+                              </span>
+                              {paragraph.matched_reference_urls.map((url) => (
+                                <a key={url} href={url} target="_blank" rel="noopener noreferrer">
+                                  {url}
+                                </a>
+                              ))}
+                            </div>
+                          )}
 
                           {paragraph.issues.length > 0 && (
                             <div className="issues-tags-list">

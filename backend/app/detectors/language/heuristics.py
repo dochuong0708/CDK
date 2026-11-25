@@ -11,15 +11,15 @@ URGENCY_PATTERNS = (
     r"kh[oô]ng\s+th[iì]\s+(?:t[aà]i\s+kho[aả]n\s+)?s[eẽ]\s+b[iị]\s+kh[oó]a",
 )
 SENSITIVE_PATTERNS = (
-    r"chuy[eể]n\s+ti[eề]n",
+
     r"m[aậ]\s*k[hẩ]u|password",
     r"(?:m[aã]\s+)?otp",
-    r"s\.?\s*t\.?\s*k\.?",
+
     r"m[aã]\s+x[aá]c\s+th[uự]c",
 )
 THREAT_PATTERNS = (
-    r"t[aà]i\s+kho[aả]n\s+(?:c[uủ]a\s+b[aạ]n\s+)?s[eẽ]\s+b[iị]\s+(?:kh[oó]a|h[uủ]y)",
-    r"ph[aạ]t\s+ngu[yê]n|kh[oở]i\s+t[oố]",
+    r"t[aà]i\s+kho[aả]n\s+(?:c[uủ]a\s+b[aạ]n\s+)?s[eẽ]\s+b[iị]\s+(?:kh[oó]a|h[uủ]y)", 
+
 )
 
 SENSATIONAL_PATTERNS = (
@@ -96,7 +96,7 @@ STYLE_RULES = (
 FRAUD_RULES = (
     (URGENCY_PATTERNS, 0.35, "Có ngôn ngữ thúc giục hoặc hứa trúng thưởng"),
     (THREAT_PATTERNS, 0.40, "Có dấu hiệu đe dọa khóa tài khoản hoặc gây áp lực"),
-    (SENSITIVE_PATTERNS, 0.40, "Có yêu cầu chuyển tiền hoặc cung cấp thông tin xác thực"),
+    (SENSITIVE_PATTERNS, 0.40, "Phát hiện đề cập đến thông tin xác thực nhạy cảm"),
 )
 
 

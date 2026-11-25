@@ -28,7 +28,12 @@ app.include_router(health_router)
 store = AnalysisStore(os.getenv('DEEPGUARD_DB_PATH', './data/deepguard.db'))
 orchestrator = DetectorOrchestrator()
 fact_checker = FactChecker()
-article_analyzer = ArticleAnalyzer(fact_checker=fact_checker, store=store)
+article_analyzer = ArticleAnalyzer(
+    fact_checker=fact_checker,
+    store=store,
+    fraud_classifier=orchestrator.language_detector.fraud_classifier,
+    rag_checker=orchestrator.language_detector.rag_checker,
+)
 upload_dir = Path(os.getenv('DEEPGUARD_UPLOAD_DIR', './data/uploads'))
 upload_dir.mkdir(parents=True, exist_ok=True)
 

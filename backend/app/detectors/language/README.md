@@ -44,8 +44,24 @@ Cách bật mô hình
 - Đánh giá độc lập model đã lưu: python -m app.detectors.language.train ..\data\language\test.csv --text-column text --label-column label --evaluate-model data\models\vietnamese-language-risk.joblib
 - Ví dụ nhãn dataset: python -m app.detectors.language.train ..\data\language\dataset.csv --text-column content --label-column label --risky-label HATE --risky-label OFFENSIVE --safe-label CLEAN
 - Script dùng TF-IDF unigram/bigram và Logistic Regression. Nếu không truyền split ngoài, script tự chia train/test có stratify; nếu truyền validation/test thì giữ nguyên toàn bộ train. Script in precision/recall/F1 và lưu pipeline ở backend/data/models/vietnamese-language-risk.joblib.
-- Đặt biến môi trường DEEPGUARD_LANGUAGE_MODEL_PATH trỏ tới file model trước khi khởi chạy backend. Ví dụ PowerShell khi đang ở thư mục backend: $env:DEEPGUARD_LANGUAGE_MODEL_PATH = (Resolve-Path 'data/models/vietnamese-language-risk.joblib').Path
+- Model joblib chỉ được nạp khi đặt `DEEPGUARD_LANGUAGE_MODEL_PATH`; backend không tự nạp model fake/real cũ vì có thể đánh giá sai văn bản ngoài miền dữ liệu huấn luyện. Ví dụ PowerShell khi đang ở thư mục backend: `$env:DEEPGUARD_LANGUAGE_MODEL_PATH = (Resolve-Path 'data/models/vietnamese-language-risk.joblib').Path`.
 - Không commit dữ liệu cá nhân, model có điều khoản hạn chế hoặc dữ liệu huấn luyện chưa được phép chia sẻ.
+
+PhoBERT ONNX INT8 (tùy chọn)
+
+- Cài các dependency inference: `python -m pip install -r requirements-ml.txt`.
+- Fine-tune từ các CSV có nhãn nhị phân đã được kiểm tra quyền sử dụng: `python -m app.detectors.language.train_phobert --dataset path/to/fake-news.csv --dataset path/to/phishing.csv --text-column text --label-column label --risky-label risky --safe-label safe --output data/models/phobert-fraud-finetuned`. Các file `--dataset` được gộp rồi chia train/validation nội bộ theo tỷ lệ 85/15; không truyền test set vào lệnh này.
+- Script loại mẫu trùng/xung đột và mặc định từ chối train nếu không có 10.000–20.000 mẫu hợp lệ. Repo hiện chỉ có 1.178 bài Fake_news_data sau khử trùng; ViFactCheck/ViWikiFC là nhãn hỗ trợ/mâu thuẫn luận điểm, không thể tự động coi là nhãn lừa đảo. Cần bổ sung dataset phishing/scam được cấp phép và ánh xạ nhãn đã xác nhận trước khi train.
+- Xuất ONNX: `optimum-cli export onnx --model data/models/phobert-fraud-finetuned --task text-classification phobert_onnx`.
+- Quantize INT8: `python -m app.detectors.language.quantize_onnx phobert_onnx phobert_onnx_int8`.
+- Bật inference bằng `DEEPGUARD_PHOBERT_ONNX_DIR` trỏ đến thư mục INT8. Bộ phân loại giữ NFC từ preprocessing, tách từ bằng underthesea khi cài, và chạy ONNX Runtime CPU. Chưa có checkpoint thì PhoBERT để `null`, không giả lập score.
+
+Local RAG với FAISS và NLI ONNX (tùy chọn)
+
+- Chỉ đưa vào corpus các đoạn trích đã được cấp phép sử dụng. Lưu một JSON object trên mỗi dòng trong file JSONL với các trường `text`, `title`, `url`, `published_at`; metadata URL phải là nguồn được xác minh. Không tự động scrape hoặc lưu bài báo khi chưa có quyền.
+- Xuất/quantize NLI theo cùng luồng Optimum ONNX, với model classification có nhãn `entailment`, `neutral`, `contradiction`. Cấu hình `DEEPGUARD_REFERENCE_CORPUS` trỏ tới JSONL và `DEEPGUARD_NLI_ONNX_DIR` trỏ tới thư mục model INT8. NLI chỉ đánh giá top-3 đoạn đủ độ tương đồng; nguồn ngoài allowlist không được dùng để giảm cảnh báo.
+- FAISS CPU được dùng khi cài; nếu không, retrieval dùng cosine trên embedding hiện có. Thiếu corpus hoặc NLI model thì RAG local trả trạng thái chưa xác minh và không ảnh hưởng kết quả.
+- API text trả `phobert_fraud_score`, `matched_reference_urls`, và `suspicious_phrases` với span `start`/`end`. Article API trả PhoBERT score và URL đối chứng theo đoạn để Dashboard hiển thị.
 
 Lệnh cho các file Fake_news_data hiện có
 

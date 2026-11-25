@@ -60,6 +60,16 @@ def noisy_or(rule_score: float, nlp_score: float | None) -> float:
     return min(0.95, 1 - (1 - rule_score) * (1 - NLP_EVIDENCE_WEIGHT * nlp_score))
 
 
+def noisy_or_probabilities(probabilities: list[float | None]) -> float:
+    """Combine independent probability estimates using an exact Noisy-OR."""
+    remaining_probability = 1.0
+    for probability in probabilities:
+        if probability is not None:
+            bounded = min(1.0, max(0.0, probability))
+            remaining_probability *= 1.0 - bounded
+    return 1.0 - remaining_probability
+
+
 def combine_factuality(
     model_score: float | None,
     fact_check_risk: float | None,
@@ -80,6 +90,22 @@ def fuse(style_risk: float, fraud_risk: float, factuality_risk: float | None) ->
         blended = STYLE_WEIGHT * style_risk + FACTUALITY_WEIGHT * factuality_risk
         content_risk = max(factuality_risk, blended)
     overall = min(0.95, max(fraud_risk, content_risk))
+    return RiskBreakdown(style_risk, fraud_risk, factuality_risk, overall)
+
+
+def fuse_multilayer_risk(
+    style_risk: float,
+    rule_fraud_risk: float,
+    dl_fraud_prob: float | None,
+    factuality_risk: float | None,
+    is_verified_trusted_source: bool = False,
+) -> RiskBreakdown:
+    fraud_risk = noisy_or_probabilities([rule_fraud_risk, dl_fraud_prob])
+    if is_verified_trusted_source:
+        style_risk *= 0.3
+        fraud_risk *= 0.3
+        factuality_risk = 0.0
+    overall = noisy_or_probabilities([style_risk, fraud_risk, factuality_risk])
     return RiskBreakdown(style_risk, fraud_risk, factuality_risk, overall)
 
 

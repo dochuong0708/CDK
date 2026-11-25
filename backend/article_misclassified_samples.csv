@@ -1,0 +1,15 @@
+﻿sample_index,actual_label,actual_binary,predicted_label,predicted_binary,overall_risk_score,credibility_score,style_risk_score,fraud_risk_score,factuality_risk_score,total_paragraphs,ai_components,processing_time_seconds,error_type
+2,real,0,SUSPICIOUS,1,61,39,0,0,61,14,legacy_fake_news_model,0.047521,FALSE POSITIVE
+10,real,0,SUSPICIOUS,1,42,58,22,0,42,3,legacy_fake_news_model,0.01762,FALSE POSITIVE
+37,real,0,SUSPICIOUS,1,60,40,0,0,60,6,legacy_fake_news_model,0.023241,FALSE POSITIVE
+48,real,0,SUSPICIOUS,1,42,58,19,0,42,12,legacy_fake_news_model,0.08239,FALSE POSITIVE
+50,real,0,SUSPICIOUS,1,56,44,0,0,56,31,legacy_fake_news_model,0.406264,FALSE POSITIVE
+52,real,0,SUSPICIOUS,1,60,40,0,0,60,16,legacy_fake_news_model,0.039195,FALSE POSITIVE
+55,fake,1,SAFE,0,46,54,0,0,46,17,legacy_fake_news_model,0.158186,FALSE NEGATIVE
+68,real,0,SUSPICIOUS,1,35,65,26,0,35,3,legacy_fake_news_model,0.016768,FALSE POSITIVE
+69,real,0,SUSPICIOUS,1,35,65,19,0,35,11,legacy_fake_news_model,0.130046,FALSE POSITIVE
+73,real,0,SUSPICIOUS,1,62,38,0,0,62,11,legacy_fake_news_model,0.025824,FALSE POSITIVE
+95,fake,1,SAFE,0,44,56,0,0,44,10,legacy_fake_news_model,0.067414,FALSE NEGATIVE
+100,real,0,SUSPICIOUS,1,41,59,19,0,41,10,legacy_fake_news_model,0.068972,FALSE POSITIVE
+114,real,0,SUSPICIOUS,1,39,61,19,0,39,10,legacy_fake_news_model,0.076735,FALSE POSITIVE
+115,real,0,SUSPICIOUS,1,57,43,0,0,57,26,legacy_fake_news_model,0.097521,FALSE POSITIVE

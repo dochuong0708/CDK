@@ -1,0 +1,69 @@
+{
+  "evaluation_mode": "article_analysis_without_online_fact_check",
+  "prediction_mapping": {
+    "SAFE": "real",
+    "SUSPICIOUS": "fake",
+    "DANGEROUS": "fake"
+  },
+  "total_samples": 118,
+  "successful_samples": 118,
+  "failed_samples": 0,
+  "accuracy": 0.9067796610169492,
+  "precision_fake": 0.8933333333333333,
+  "recall_fake": 0.9571428571428572,
+  "f1_fake": 0.9241379310344827,
+  "macro_f1": 0.901629405077681,
+  "weighted_f1": 0.9058259099170848,
+  "confusion_matrix": [
+    [
+      40,
+      8
+    ],
+    [
+      3,
+      67
+    ]
+  ],
+  "classification_report": {
+    "real": {
+      "precision": 0.9302325581395349,
+      "recall": 0.8333333333333334,
+      "f1-score": 0.8791208791208791,
+      "support": 48.0
+    },
+    "fake": {
+      "precision": 0.8933333333333333,
+      "recall": 0.9571428571428572,
+      "f1-score": 0.9241379310344827,
+      "support": 70.0
+    },
+    "accuracy": 0.9067796610169492,
+    "macro avg": {
+      "precision": 0.9117829457364341,
+      "recall": 0.8952380952380953,
+      "f1-score": 0.901629405077681,
+      "support": 118.0
+    },
+    "weighted avg": {
+      "precision": 0.9083431874917881,
+      "recall": 0.9067796610169492,
+      "f1-score": 0.9058259099170848,
+      "support": 118.0
+    }
+  },
+  "actual_distribution": {
+    "fake": 70,
+    "real": 48
+  },
+  "predicted_three_class_distribution": {
+    "SUSPICIOUS": 75,
+    "SAFE": 43
+  },
+  "active_component_sample_counts": {
+    "legacy_fake_news_model": 118,
+    "semantic_embedding": 118
+  },
+  "average_processing_time_seconds": 1.1819948389830508,
+  "total_processing_time_seconds": 139.5315406999871,
+  "errors": []
+}

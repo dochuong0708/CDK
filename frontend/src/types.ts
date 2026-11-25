@@ -50,6 +50,8 @@ export interface ParagraphAnalysis {
   fraud_risk: number
   factuality_risk: number | null
   factuality_label: FactualityLabel
+  phobert_fraud_score: number | null
+  matched_reference_urls: string[]
   suspicious_phrases: SuspiciousPhrase[]
   issues: string[]
   claims: Array<{
@@ -87,6 +89,8 @@ export interface ArticleAnalysisResponse {
   title: string
   summary: ArticleSummary
   paragraphs: ParagraphAnalysis[]
+  matched_reference_urls: string[]
+  ai_components: string[]
   claims: ClaimItem[]
   fact_check_error?: string | null
   fact_check_report_id?: string | null

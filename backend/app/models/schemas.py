@@ -21,6 +21,9 @@ class AnalysisResult(BaseModel):
     factualityRisk: int | None = Field(default=None, ge=0, le=100)
     factualityLabel: str | None = None
     factCheckId: str | None = None
+    phobert_fraud_score: float | None = Field(default=None, ge=0, le=1)
+    matched_reference_urls: list[str] = Field(default_factory=list)
+    suspicious_phrases: list[dict[str, object]] = Field(default_factory=list)
 class Analysis(AnalysisResult):
     input: str
     createdAt: datetime

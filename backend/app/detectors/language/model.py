@@ -13,25 +13,6 @@ class LanguageModel:
 
     def __init__(self, model_path: str | None = None):
         self.model_path = model_path or os.getenv("DEEPGUARD_LANGUAGE_MODEL_PATH")
-        if not self.model_path:
-            candidate_dirs = [
-                Path(__file__).resolve().parent.parent.parent.parent / "data" / "models",
-                Path("./data/models"),
-                Path("../data/models"),
-            ]
-            for cdir in candidate_dirs:
-                for filename in [
-                    "vietnam_fake_news_risk_v3.joblib",
-                    "vietnam_fake_news_risk_v2.joblib",
-                    "vietnam_fake_news_risk.joblib",
-                ]:
-                    target = cdir / filename
-                    if target.exists():
-                        self.model_path = str(target)
-                        break
-                if self.model_path:
-                    break
-
         self.model: Any | None = None
         if self.model_path and Path(self.model_path).exists():
             try:
