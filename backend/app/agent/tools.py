@@ -127,7 +127,7 @@ class DeepGuardTools:
             raise ValueError(f"Không tìm thấy tệp: {path}")
 
         if modality == "Image":
-            result = self.orchestrator.analyze_image(path)
+            result = self.orchestrator.analyze_image(path.read_bytes(), path.name)
         else:
             result = self.orchestrator.analyze_audio(path)
         return self._save(result)

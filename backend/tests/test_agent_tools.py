@@ -22,10 +22,14 @@ def make_analysis(modality: str = "Text") -> Analysis:
 
 
 class FakeOrchestrator:
+    def __init__(self) -> None:
+        self.image_arguments: tuple[bytes, str] | None = None
+
     def analyze_text(self, text: str) -> Analysis:
         return make_analysis()
 
-    def analyze_image(self, path: Path) -> Analysis:
+    def analyze_image(self, file_bytes: bytes, filename: str) -> Analysis:
+        self.image_arguments = (file_bytes, filename)
         return make_analysis("Image")
 
     def analyze_audio(self, path: Path) -> Analysis:
@@ -81,6 +85,7 @@ def test_analyze_image_uses_local_file_and_persists(tmp_path: Path) -> None:
     result = tools.execute("analyze_media", {"path": str(image), "modality": "Image"})
 
     assert result["modality"] == "Image"
+    assert tools.orchestrator.image_arguments == (b"image", "sample.png")
     assert len(store.items) == 1
 
 

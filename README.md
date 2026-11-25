@@ -93,7 +93,17 @@ Compose hiện chỉ dựng backend API trên cổng 8000 và mount thư mục `
 
 ## Cấu hình môi trường
 
+<<<<<<< HEAD
 Ứng dụng đọc biến môi trường của process. `.env.example` là mẫu tham khảo, nhưng Python hiện không tự nạp file `.env`.
+=======
+### 2. 🖼️ Chế độ Phân tích Hình ảnh
+* **Kéo thả hoặc tải ảnh lên:** Hỗ trợ JPG, PNG, WEBP.
+* **Phân tích:** Backend kết hợp ConvNeXt-Tiny local (`backend/models/detector.pt`) với ViT Hugging Face, EXIF và FFT. Điểm cuối cùng là trung bình 50/50 giữa ConvNeXt-Tiny và điểm đa tín hiệu; điểm đa tín hiệu dùng trọng số 70% ViT, 15% EXIF và 15% FFT.
+* Checkpoint local phải là ConvNeXt-Tiny đã huấn luyện cho hai lớp `real`/`fake`; checkpoint ResNet18 hiện có không tương thích và cần được thay bằng checkpoint ConvNeXt trước khi endpoint phân tích ảnh chạy được.
+* Ảnh tải lên được phân tích trực tiếp từ bytes, không ghi thành tệp tạm; công cụ agent đọc bytes từ tệp local. Luồng âm thanh vẫn giữ cách lưu tệp hiện tại.
+* **Cài đặt chạy local:** Chạy `python -m pip install -r requirements.txt -r requirements-image.txt` trong thư mục `backend`.
+* Hugging Face tải model khoảng 300–400 MB khi phân tích ảnh lần đầu; lần tiếp theo dùng cache. Nếu model không tải/chạy được hoặc checkpoint local thiếu, API báo lỗi thay vì âm thầm bỏ qua một detector.
+>>>>>>> origin/image-detector
 
 | Biến | Ý nghĩa | Mặc định |
 |---|---|---|
@@ -193,10 +203,26 @@ Ví dụ: `Hãy phân tích: "Tài khoản sẽ bị khóa, hãy gửi mã OTP."
 
 Dataset nằm ở `data/language/`:
 
+<<<<<<< HEAD
 - `raw/vifactcheck/`: Parquet gốc của ViFactCheck (MIT).
 - `raw/viwikifc/`: CSV gốc của ViWikiFC (CC-BY-4.0, cần ghi công).
 - `processed/claims_{train,val,test}.csv`: claim/evidence/context với nhãn `SUPPORTED`, `REFUTED`, `NEI`; phù hợp cho nghiên cứu fact-check/NLI, không phải nhãn scam/phishing.
 - `processed/news_{train,val,test}.csv`: fake/real từ Fake_news_data; hiện khoảng 1.178 mẫu theo manifest, chưa đủ để fine-tune PhoBERT quy mô lớn và cần xác nhận quyền sử dụng dữ liệu.
+=======
+- `frontend/`: Ứng dụng Web Dashboard xây dựng bằng **React + TypeScript + Vite**, giao diện Dark Theme hiện đại.
+- `backend/app/main.py`: FastAPI server cung cấp REST API và phục vụ giao diện tĩnh.
+- `backend/app/services/article_analyzer.py`: Phân đoạn bài báo, điều phối mô hình NLP, luật ngôn ngữ và fact-checking.
+- `backend/app/detectors/language/`:
+  - `model.py`: Nạp mô hình học máy (`vietnam_fake_news_risk_v3.joblib`).
+  - `heuristics.py`: Bộ quy tắc tách tín hiệu hình thức (giật gân, câu view, thuyết âm mưu) và lừa đảo.
+  - `domains.py`: Phát hiện tên miền giả mạo ngân hàng/ví bằng Levenshtein + chuẩn hóa ký tự dễ nhầm.
+  - `style_classifier.py`: Phân loại giật gân/lừa đảo theo ngữ cảnh bằng embedding tiếng Việt (tùy chọn, `requirements-ml.txt`).
+- `backend/app/services/risk_fusion.py`: Tách và kết hợp 3 trục rủi ro: Hình thức (style), Lừa đảo (fraud), Sự thật (factuality).
+- `backend/app/services/fact_checking.py`: RAG fact-check: tìm kiếm, xếp hạng snippet bằng cosine similarity, LLM đánh giá; báo cáo lưu vào SQLite (`/api/fact-checks`).
+- `backend/data/models/`: Chứa các mô hình học máy đã huấn luyện.
+- `backend/app/detectors/image/`: Detector ảnh ConvNeXt-Tiny và phân tích màu sắc; checkpoint tương thích với kiến trúc ConvNeXt được đặt tại `backend/models/detector.pt`.
+- `backend/tests/`: Bộ kiểm thử tự động pytest.
+>>>>>>> origin/image-detector
 
 Trong bản dữ liệu hiện tại, claims có 21.862 mẫu train, 3.000 validation, 2.932 test; từng record có evidence và URL. Lưu ý manifest hiện ghi nguồn `fake_news_data` trong khi claims CSV chứa `vifactcheck` và `viwikifc`; chạy lại pipeline để đồng bộ manifest trước khi trích dẫn thống kê hoặc tái tạo dataset.
 

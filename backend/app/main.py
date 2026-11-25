@@ -99,12 +99,17 @@ def analyze_text(request: TextRequest):
 async def analyze_media(file: UploadFile = File(...), modality: Modality = Form(...)):
     if not file.content_type or (not file.content_type.startswith(('audio/', 'image/', 'video/'))):
         raise HTTPException(400, 'Loại tệp không được hỗ trợ')
-    target = upload_dir / file.filename
-    target.write_bytes(await file.read())
 
     if modality == 'Image':
-        result = orchestrator.analyze_image(target)
+        try:
+            result = orchestrator.analyze_image(await file.read(), file.filename or "")
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(503, str(error)) from error
     elif modality == 'Audio':
+        target = upload_dir / file.filename
+        target.write_bytes(await file.read())
         result = orchestrator.analyze_audio(target)
     else:
         raise HTTPException(400, 'Loại media chưa được hỗ trợ trong mô-đun này')
