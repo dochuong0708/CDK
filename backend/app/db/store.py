@@ -18,6 +18,10 @@ class AnalysisStore:
         self.connection = sqlite3.connect(self.path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         apply_migrations(self.connection, Path(__file__).parents[2] / 'migrations')
+        self.connection.execute(
+            'CREATE TABLE IF NOT EXISTS audio_details (analysis_id TEXT PRIMARY KEY, payload TEXT NOT NULL)'
+        )
+        self.connection.commit()
 
     def add(self, item: Analysis) -> Analysis:
         self.connection.execute(
@@ -44,11 +48,24 @@ class AnalysisStore:
                 item.factCheckId,
             ),
         )
+        audio_payload = item.model_dump(
+            include={'audio', 'audioScore', 'audioThreshold', 'audioLatencyMs', 'audioXai'},
+            exclude_none=True,
+        )
+        if audio_payload:
+            self.connection.execute(
+                'INSERT INTO audio_details VALUES (?, ?)',
+                (item.analysisId, json.dumps(audio_payload, ensure_ascii=False)),
+            )
         self.connection.commit()
         return item
 
     def list(self, modality: str | None = None, risk: int | None = None) -> list[Analysis]:
-        query = 'SELECT * FROM analyses WHERE 1 = 1'
+        query = (
+            'SELECT analyses.*, audio_details.payload FROM analyses '
+            'LEFT JOIN audio_details ON analyses.analysis_id = audio_details.analysis_id '
+            'WHERE 1 = 1'
+        )
         parameters: list[str | int] = []
         if modality:
             query += ' AND modality = ?'
@@ -61,9 +78,14 @@ class AnalysisStore:
 
     def get(self, analysis_id: str) -> Analysis | None:
         row = self.connection.execute(
-            'SELECT * FROM analyses WHERE analysis_id = ?', (analysis_id,)
+            'SELECT analyses.*, audio_details.payload FROM analyses '
+            'LEFT JOIN audio_details ON analyses.analysis_id = audio_details.analysis_id '
+            'WHERE analyses.analysis_id = ?',
+            (analysis_id,),
         ).fetchone()
-        return self._from_row(row) if row else None
+        if not row:
+            return None
+        return self._from_row(row)
 
     def add_fact_check(self, report: FactCheckReport, input_text: str) -> FactCheckReport:
         saved = report.model_copy(
@@ -104,7 +126,7 @@ class AnalysisStore:
 
     @staticmethod
     def _from_row(row: sqlite3.Row) -> Analysis:
-        return Analysis(
+        item = Analysis(
             analysisId=row['analysis_id'],
             modality=row['modality'],
             label=row['label'],
@@ -121,3 +143,6 @@ class AnalysisStore:
             factualityLabel=row['factuality_label'],
             factCheckId=row['fact_check_id'],
         )
+        if 'payload' in row.keys() and row['payload']:
+            return Analysis.model_validate({**item.model_dump(), **json.loads(row['payload'])})
+        return item

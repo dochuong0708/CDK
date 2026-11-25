@@ -1,0 +1,44 @@
+{
+  "tools": [
+    {
+      "name": "audio_features_tool",
+      "description": "Extract MFCC statistics, waveform and mel spectrogram for an uploaded audio file.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "file_id": {
+            "description": "File handle returned by this session's upload or URL intake.",
+            "format": "uuid",
+            "title": "File Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "title": "AudioToolInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "audio_anomaly_tool",
+      "description": "Run the unvalidated ASVspoof CNN and Grad-CAM. Scores do not establish authenticity.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "file_id": {
+            "description": "File handle returned by this session's upload or URL intake.",
+            "format": "uuid",
+            "title": "File Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "title": "AudioToolInput",
+        "type": "object"
+      }
+    }
+  ]
+}
