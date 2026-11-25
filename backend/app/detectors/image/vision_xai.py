@@ -25,7 +25,8 @@ def generate_visual_xai(
     """Tạo bản đồ nhiệt Grad-CAM và ảnh khoanh vùng vi phạm dưới dạng Base64."""
     with torch.enable_grad():
         model.eval()
-        cam = GradCAM(model=model, target_layers=[model.features[-1]])
+        target_layers = [model.layer4[-1]] if hasattr(model, "layer4") else [model.features[-1]]
+        cam = GradCAM(model=model, target_layers=target_layers)
         input_tensor = eval_transform(image).unsqueeze(0).to(device)
         input_tensor.requires_grad_(True)
         grayscale_cam = cam(

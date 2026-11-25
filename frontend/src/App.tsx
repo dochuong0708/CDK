@@ -15,7 +15,6 @@ import {
   FileText,
   Image as ImageIcon,
   Mic,
-  Info,
   FileAudio,
   FileImage,
   Sliders,
@@ -28,12 +27,7 @@ import type {
   RiskLabel,
   SuspiciousPhrase,
 } from './types'
-import {
-  SAMPLE_ARTICLES,
-  SAMPLE_IMAGES,
-  SAMPLE_AUDIOS,
-} from './sampleData'
-import type { SampleMediaItem } from './sampleData'
+import { SAMPLE_ARTICLES } from './sampleData'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 const AI_COMPONENT_LABELS: Record<string, string> = {
@@ -66,7 +60,6 @@ export const App: React.FC = () => {
   // --- State for Media Modes (Image & Audio) ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [selectedSampleMedia, setSelectedSampleMedia] = useState<SampleMediaItem | null>(null)
   const [isMediaLoading, setIsMediaLoading] = useState(false)
   const [mediaResult, setMediaResult] = useState<MediaAnalysisResult | null>(null)
   const [mediaError, setMediaError] = useState<string | null>(null)
@@ -152,19 +145,10 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
   }
 
   // Handlers for Media Modes (Image / Audio)
-  const handleSelectMediaSample = (sample: SampleMediaItem) => {
-    setSelectedSampleMedia(sample)
-    setSelectedFile(null)
-    setPreviewUrl(null)
-    setMediaError(null)
-    setMediaResult(null)
-  }
-
   const handleFileDrop = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
       setSelectedFile(file)
-      setSelectedSampleMedia(null)
       setMediaResult(null)
       setMediaError(null)
       setPreviewUrl(URL.createObjectURL(file))
@@ -172,7 +156,7 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
   }
 
   const handleAnalyzeMedia = async () => {
-    if (!selectedFile && !selectedSampleMedia) {
+    if (!selectedFile) {
       setMediaError(`Vui lòng chọn hoặc tải lên tệp ${appMode === 'image' ? 'hình ảnh' : 'âm thanh'}.`)
       return
     }
@@ -205,16 +189,16 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
           riskScore: data.riskScore || 50,
           confidence: data.confidence || 0.65,
           // Kiểm tra xem data.evidence có tồn tại không, nếu không gán mặc định
-          evidence: data.evidence || ['Đã rà soát siêu dữ liệu và cấu trúc tệp'],
-          detector: data.detector || `${appMode}-heuristic-v1`,
+          evidence: data.evidence || ['Đã phân tích tệp bằng mô hình hiện tại'],
+          detector: data.detector || `${appMode}-detector`,
           input: selectedFile.name,
           createdAt: new Date().toISOString(),
           fileSize: `${(selectedFile.size / 1024).toFixed(1)} KB`,
           details: {
             anomalyType: appMode === 'image' ? 'EXIF & Compression Artifact' : 'Voice Frequency Pattern',
             deepfakeScore: data.riskScore,
-            metadataStatus: 'Đã phân tích cấu trúc nhị phân',
-            artifactsDetected: ['Đang sử dụng detector mẫu mô phỏng'],
+            metadataStatus: 'Đã phân tích cấu trúc tệp',
+            artifactsDetected: data.artifactsDetected || [],
           },
           // Lưu thêm object xai nếu API trả về (tùy chọn)
           xai: data.xai || null,
@@ -225,33 +209,6 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
       } finally {
         setIsMediaLoading(false)
       }
-    } else if (selectedSampleMedia) {
-      // Nếu người dùng bấm bài mẫu mô phỏng (Prototype demonstration)
-      setTimeout(() => {
-        setMediaResult({
-          analysisId: `proto-${selectedSampleMedia.id}`,
-          modality: appMode === 'image' ? 'Image' : 'Audio',
-          label: selectedSampleMedia.label,
-          riskScore: selectedSampleMedia.expectedRisk,
-          confidence: 0.86,
-          evidence: [
-            selectedSampleMedia.description,
-            `Kiểm tra cấu trúc tệp: ${selectedSampleMedia.fileName}`,
-            'Sàng lọc qua thuật toán phát hiện bất thường biểu trưng (Prototype Model)',
-          ],
-          detector: `${appMode}-prototype-heuristic-v1`,
-          input: selectedSampleMedia.fileName,
-          createdAt: new Date().toISOString(),
-          fileSize: selectedSampleMedia.fileSize,
-          details: {
-            anomalyType: selectedSampleMedia.category,
-            deepfakeScore: selectedSampleMedia.expectedRisk,
-            metadataStatus: 'Phát hiện sai lệch dấu vân tay kỹ thuật số',
-            artifactsDetected: [selectedSampleMedia.description],
-          },
-        })
-        setIsMediaLoading(false)
-      }, 900)
     }
   }
 
@@ -356,17 +313,10 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
             <Shield size={26} />
           </div>
           <div>
-            <h1 className="brand-title">DeepGuard AI</h1>
-            <p className="brand-subtitle">
-              <span>Nền tảng phân tích & kiểm chứng nội dung giả mạo đa phương tiện</span>
-            </p>
+            <h1 className="brand-title">DeepGuard AI 3.0</h1>
           </div>
         </div>
 
-        <div className="header-status-badge" id="agent-status-badge">
-          <div className="status-dot"></div>
-          <span>3 Chế độ phân tích Đa phương tiện</span>
-        </div>
       </header>
 
       {/* 3-MODE SWITCHER TABS */}
@@ -380,7 +330,6 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
           >
             <FileText size={18} />
             <span>Phân tích Văn bản</span>
-            <span className="mode-tab-badge badge-complete">Hoàn thiện</span>
           </button>
 
           <button
@@ -391,7 +340,6 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
           >
             <ImageIcon size={18} />
             <span>Phân tích Hình ảnh</span>
-            <span className="mode-tab-badge badge-prototype">Biểu trưng</span>
           </button>
 
           <button
@@ -402,7 +350,6 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
           >
             <Mic size={18} />
             <span>Phân tích Âm thanh</span>
-            <span className="mode-tab-badge badge-prototype">Biểu trưng</span>
           </button>
         </div>
       </div>
@@ -416,9 +363,6 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
             <h2 className="hero-headline">
               Phân Tích Bài Viết Dài & <span className="hero-gradient-text">Rà Soát Sai Lệch</span>
             </h2>
-            <p className="hero-description">
-              Dán bất kỳ bài báo hay tin đồn (không giới hạn số chữ). Hệ thống sẽ tự động bóc tách từng đoạn văn, quét mô hình AI học máy kết hợp luật ngôn ngữ, trích xuất luận điểm đối chiếu với báo chí chính thống và tổng kết điểm tin cậy.
-            </p>
           </div>
 
           {/* Input Card */}
@@ -1006,7 +950,7 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
       )}
 
       {/* =========================================================
-          MODE 2 & 3: PHÂN TÍCH HÌNH ẢNH & ÂM THANH (BIỂU TRƯNG)
+          MODE 2 & 3: PHÂN TÍCH HÌNH ẢNH & ÂM THANH
           ========================================================= */}
       {(appMode === 'image' || appMode === 'audio') && (
         <div id="media-mode-container">
@@ -1017,46 +961,17 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                 {appMode === 'image' ? 'Phát Hiện Deepfake/Cắt Ghép' : 'Phát Hiện Voice Clone AI'}
               </span>
             </h2>
-            <p className="hero-description">
-              {appMode === 'image'
-                ? 'Tải lên hình ảnh cần kiểm tra dấu vết chỉnh sửa, ghép đè con dấu, mặt AI (Synthetic Face) hoặc sai lệch siêu dữ liệu máy ảnh EXIF.'
-                : 'Tải lên tệp âm thanh hoặc bản ghi âm cuộc gọi để sàng lọc giọng nói tổng hợp AI, đe dọa tống tiền hoặc bất thường quang phổ âm thanh.'}
-            </p>
-          </div>
-
-          {/* Prototype Notice Banner */}
-          <div className="prototype-notice-banner">
-            <Info size={20} color="#fbbf24" style={{ flexShrink: 0 }} />
-            <div>
-              <strong>Chế độ biểu trưng (Prototype Model):</strong> Bộ detector chuyên sâu cho{' '}
-              {appMode === 'image' ? 'hình ảnh' : 'âm thanh'} đang được phát triển theo lộ trình dự án. Giao diện dưới đây đóng vai trò mô phỏng quy trình kiểm tra và hiển thị kết quả sàng lọc sơ bộ.
-            </div>
           </div>
 
           {/* Media Input Card */}
           <div className="glass-card input-section">
-            {/* Quick Sample Selector for Media */}
             <div className="sample-buttons-wrapper">
-              <span className="sample-btn-label">Chọn tệp mẫu mô phỏng:</span>
-              {(appMode === 'image' ? SAMPLE_IMAGES : SAMPLE_AUDIOS).map((sample) => (
-                <button
-                  key={sample.id}
-                  type="button"
-                  id={`btn-${sample.id}`}
-                  className="sample-chip-btn"
-                  onClick={() => handleSelectMediaSample(sample)}
-                >
-                  {appMode === 'image' ? <FileImage size={14} /> : <FileAudio size={14} />}
-                  <span>{sample.category}</span>
-                </button>
-              ))}
-              {(selectedFile || selectedSampleMedia || mediaResult) && (
+              {(selectedFile || mediaResult) && (
                 <button
                   type="button"
                   className="sample-chip-btn"
                   onClick={() => {
                     setSelectedFile(null)
-                    setSelectedSampleMedia(null)
                     setPreviewUrl(null)
                     setMediaResult(null)
                     setMediaError(null)
@@ -1085,8 +1000,6 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                 <p className="dropzone-title">
                   {selectedFile
                     ? `Đã chọn: ${selectedFile.name}`
-                    : selectedSampleMedia
-                    ? `Đang chọn mẫu: ${selectedSampleMedia.title}`
                     : `Nhấp hoặc kéo thả tệp ${appMode === 'image' ? 'hình ảnh' : 'âm thanh'} vào đây`}
                 </p>
                 <p className="dropzone-hint">
@@ -1096,22 +1009,20 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
             </label>
 
             {/* Preview Box if selected */}
-            {(selectedFile || selectedSampleMedia) && (
+            {selectedFile && (
               <div className="media-preview-container">
                 <div className="media-file-meta-bar">
                   <div className="media-file-info">
                     {appMode === 'image' ? <FileImage size={18} color="#38bdf8" /> : <FileAudio size={18} color="#38bdf8" />}
                     <strong>
-                      {selectedFile ? selectedFile.name : selectedSampleMedia?.fileName}
+                      {selectedFile.name}
                     </strong>
                     <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                      ({selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : selectedSampleMedia?.fileSize})
+                      (${(selectedFile.size / 1024).toFixed(1)} KB)
                     </span>
                   </div>
 
-                  <span className="priority-source-badge">
-                    {selectedSampleMedia ? 'Dữ liệu mẫu mô phỏng' : 'Tệp tải lên'}
-                  </span>
+                  <span className="priority-source-badge">Tệp tải lên</span>
                 </div>
 
                 {/* Simulated Waveform or Image Preview */}
@@ -1119,22 +1030,7 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                   <div style={{ textAlign: 'center', marginTop: 10 }}>
                     {previewUrl ? (
                       <img src={previewUrl} alt="Preview" className="media-thumbnail-view" />
-                    ) : (
-                      <div
-                        style={{
-                          height: 140,
-                          borderRadius: 8,
-                          background: 'rgba(0,0,0,0.3)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#94a3b8',
-                          fontSize: '0.9rem',
-                        }}
-                      >
-                        [Mô phỏng khung hình: {selectedSampleMedia?.title}]
-                      </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
 
@@ -1361,10 +1257,10 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
                   <div className="inspector-metric-card">
                     <span className="inspector-metric-label">Trạng thái Detector</span>
                     <span className="inspector-metric-val" style={{ color: '#fbbf24' }}>
-                      Heuristic Prototype
+                      {mediaResult.detector}
                     </span>
                     <span className="inspector-metric-desc">
-                      Chế độ sàng lọc biểu trưng theo đặc tả dự án
+                      {mediaResult.modality}
                     </span>
                   </div>
                 </div>
@@ -1376,11 +1272,7 @@ ${result.recommendations.map((r) => `- ${r}`).join('\n')}
 
       {/* Footer */}
       <footer className="app-footer">
-        <p>DeepGuard AI v2.5 — Nghiên cứu phân tích & Phát hiện tin giả đa phương tiện</p>
-        <p style={{ marginTop: 4 }}>
-          Tích hợp 3 Chế độ: Phân tích V
-          ăn bản (NLP & Fact-Check), Phân tích Hình ảnh & Âm thanh (Biểu trưng)
-        </p>
+        <p>DeepGuard AI 3.0</p>
       </footer>
     </div>
   )

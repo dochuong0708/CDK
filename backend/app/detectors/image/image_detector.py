@@ -18,11 +18,17 @@ REAL_THRESHOLD = 0.40
 class ImageDetector:
     def __init__(self, model_path: Path | None = None) -> None:
         configured_path = os.getenv("DEEPGUARD_IMAGE_MODEL_PATH")
-        self.model_path = model_path or (
-            Path(configured_path)
-            if configured_path
-            else Path(__file__).resolve().parents[3] / "models" / "detector.pt"
+        repo_root = Path(__file__).resolve().parents[4]
+        candidates = (
+            Path(configured_path) if configured_path else None,
+            repo_root / "image-service" / "detector.pt",
+            repo_root / "backend" / "models" / "detector.pt",
         )
+        selected_path = model_path or next(
+            (path for path in candidates if path is not None and path.is_file()),
+            candidates[-1],
+        )
+        self.model_path = selected_path
         self._model = None
         self._device = None
         self._fake_idx = None
@@ -60,29 +66,31 @@ class ImageDetector:
                 raise ValueError("checkpoint has an invalid fake class index")
             if not isinstance(state_dict, dict):
                 raise ValueError("checkpoint state_dict is invalid")
-            if "features.0.0.weight" not in state_dict:
-                raise ValueError(
-                    "checkpoint is not a ConvNeXt-Tiny model; train/export a compatible "
-                    "two-class checkpoint before using this detector"
-                )
-            classifier_weight = state_dict.get("classifier.2.weight")
-            if not isinstance(classifier_weight, torch.Tensor) or tuple(classifier_weight.shape) != (
-                2,
-                768,
-            ):
-                raise ValueError(
-                    "checkpoint must contain a ConvNeXt-Tiny classifier with two output classes"
-                )
 
-            model = models.convnext_tiny(weights=None)
-            model.classifier[2] = nn.Linear(model.classifier[2].in_features, 2)
-            model.load_state_dict(state_dict)
+            if "conv1.weight" in state_dict and "fc.weight" in state_dict:
+                classifier_weight = state_dict["fc.weight"]
+                if tuple(classifier_weight.shape) != (2, 512):
+                    raise ValueError("checkpoint must contain a two-class ResNet18 classifier")
+                model = models.resnet18(weights=None)
+                model.fc = nn.Linear(model.fc.in_features, 2)
+                model.load_state_dict(state_dict)
+                architecture = "resnet18"
+            elif "features.0.0.weight" in state_dict:
+                classifier_weight = state_dict.get("classifier.2.weight")
+                if not isinstance(classifier_weight, torch.Tensor) or tuple(classifier_weight.shape) != (2, 768):
+                    raise ValueError("checkpoint must contain a ConvNeXt-Tiny classifier with two output classes")
+                model = models.convnext_tiny(weights=None)
+                model.classifier[2] = nn.Linear(model.classifier[2].in_features, 2)
+                model.load_state_dict(state_dict)
+                architecture = "convnext-tiny"
+            else:
+                raise ValueError("unsupported image checkpoint architecture")
+
             model.to(device).eval()
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
             raise RuntimeError(
-                f"Could not load ConvNeXt-Tiny image detector checkpoint: {self.model_path}. "
-                "A compatible two-class ConvNeXt-Tiny checkpoint is required at "
-                "backend/models/detector.pt."
+                f"Could not load image detector checkpoint: {self.model_path}. "
+                "A compatible two-class ResNet18 or ConvNeXt-Tiny checkpoint is required."
             ) from error
 
         self._model = model
@@ -139,7 +147,7 @@ class ImageDetector:
         # Tổng hợp danh sách bằng chứng giải thích (Textual XAI)
         evidence = [
             f"Combined AI-generation risk score: {risk_score}%",
-            f"ConvNeXt-Tiny + color forensics (local model): {local_probability:.1%}",
+            f"ResNet18/ConvNeXt + color forensics (local model): {local_probability:.1%}",
             *xai_details["reasons"],
             f"Metadata: {multi_signal['metadata_reason']}",
             f"Frequency: {multi_signal['frequency_reason']}",
@@ -164,7 +172,7 @@ class ImageDetector:
             "riskScore": risk_score,
             "confidence": max(probability, 1 - probability),
             "evidence": evidence,
-            "detector": "image-convnexttiny-multisignal-v1",
+            "detector": "image-resnet18-multisignal-v1",
             "input": filename,
             "createdAt": datetime.now(),
         }

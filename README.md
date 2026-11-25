@@ -1,6 +1,6 @@
 # DeepGuard
 
-DeepGuard là đồ án phân tích nội dung tiếng Việt, gồm Web Dashboard, REST API và Agent CLI. Hệ thống hỗ trợ rà soát văn bản, các dấu hiệu tin giả/lừa đảo, tìm kiếm nguồn fact-check và thử nghiệm phân tích ảnh/âm thanh.
+DeepGuard là đồ án phân tích nội dung tiếng Việt, gồm Web Dashboard 3.0, REST API và Agent CLI. Hệ thống hỗ trợ rà soát văn bản, phát hiện dấu hiệu tin giả/lừa đảo, tìm kiếm nguồn fact-check và phân tích tệp ảnh bằng model local; mô-đun âm thanh hiện vẫn ở mức heuristic.
 
 > DeepGuard là công cụ sàng lọc, không phải cơ quan xác minh. Điểm rủi ro không bảo đảm đúng/sai. Không dùng kết quả thay cho tư vấn y tế, pháp lý hoặc tài chính.
 
@@ -14,7 +14,9 @@ DeepGuard là đồ án phân tích nội dung tiếng Việt, gồm Web Dashboa
 | PhoBERT ONNX INT8 | Có loader, script fine-tune và quantize; cần tự chuẩn bị checkpoint đã huấn luyện và cấu hình đường dẫn. Repo không kèm weights. |
 | Fact-check web | Có pipeline trích xuất luận điểm, tìm kiếm nguồn, xếp hạng và đánh giá bằng Ollama; cần Ollama/model khi dùng. |
 | Local RAG + FAISS/NLI | Tùy chọn; cần corpus JSONL và model NLI ONNX do người dùng cung cấp. Chưa có corpus/model mặc định trong repo. |
-| Phân tích ảnh/âm thanh | Prototype rất sơ khai: hiện dùng thông tin file/kích thước để trả điểm; chưa phân tích pixel, EXIF thực tế hay đặc trưng tín hiệu âm thanh. Không phát hiện deepfake đáng tin cậy. |
+| Dashboard 3.0 | Giao diện React có ba chế độ: văn bản, hình ảnh và âm thanh; upload/submit thật gửi dữ liệu tới API, không có nhãn prototype hoặc kết quả media mô phỏng. |
+| Phân tích ảnh | Có thể nạp checkpoint ResNet18 hoặc ConvNeXt-Tiny hai lớp; quét toàn ảnh và sliding patches, kết hợp phân tích màu/nhịp phổ, EXIF và sinh bản đồ nhiệt/khung chú thích Grad-CAM. |
+| Phân tích âm thanh | Chưa có model deepfake giọng nói; detector hiện trả điểm theo kích thước file và metadata cơ bản. Không nên hiểu kết quả là xác suất clone/AI voice đã hiệu chuẩn. |
 | Agent CLI | Có; dùng Ollama để chat và gọi tools phân tích/fact-check/lịch sử. |
 
 Dashboard hiển thị danh sách thành phần AI thực sự chạy. Nếu chưa cấu hình model, kết quả có thể chỉ dựa trên luật và heuristic; hệ thống không giả vờ rằng PhoBERT/NLI đang chạy.
@@ -93,17 +95,7 @@ Compose hiện chỉ dựng backend API trên cổng 8000 và mount thư mục `
 
 ## Cấu hình môi trường
 
-<<<<<<< HEAD
 Ứng dụng đọc biến môi trường của process. `.env.example` là mẫu tham khảo, nhưng Python hiện không tự nạp file `.env`.
-=======
-### 2. 🖼️ Chế độ Phân tích Hình ảnh
-* **Kéo thả hoặc tải ảnh lên:** Hỗ trợ JPG, PNG, WEBP.
-* **Phân tích:** Backend kết hợp ConvNeXt-Tiny local (`backend/models/detector.pt`) với ViT Hugging Face, EXIF và FFT. Điểm cuối cùng là trung bình 50/50 giữa ConvNeXt-Tiny và điểm đa tín hiệu; điểm đa tín hiệu dùng trọng số 70% ViT, 15% EXIF và 15% FFT.
-* Checkpoint local phải là ConvNeXt-Tiny đã huấn luyện cho hai lớp `real`/`fake`; checkpoint ResNet18 hiện có không tương thích và cần được thay bằng checkpoint ConvNeXt trước khi endpoint phân tích ảnh chạy được.
-* Ảnh tải lên được phân tích trực tiếp từ bytes, không ghi thành tệp tạm; công cụ agent đọc bytes từ tệp local. Luồng âm thanh vẫn giữ cách lưu tệp hiện tại.
-* **Cài đặt chạy local:** Chạy `python -m pip install -r requirements.txt -r requirements-image.txt` trong thư mục `backend`.
-* Hugging Face tải model khoảng 300–400 MB khi phân tích ảnh lần đầu; lần tiếp theo dùng cache. Nếu model không tải/chạy được hoặc checkpoint local thiếu, API báo lỗi thay vì âm thầm bỏ qua một detector.
->>>>>>> origin/image-detector
 
 | Biến | Ý nghĩa | Mặc định |
 |---|---|---|
@@ -114,6 +106,7 @@ Compose hiện chỉ dựng backend API trên cổng 8000 và mount thư mục `
 | `DEEPGUARD_PHOBERT_ONNX_DIR` | Thư mục model text-classification ONNX INT8. | Tắt |
 | `DEEPGUARD_REFERENCE_CORPUS` | File JSONL corpus cho Local RAG. | Tắt |
 | `DEEPGUARD_NLI_ONNX_DIR` | Thư mục model NLI ONNX. | Tắt |
+| `DEEPGUARD_IMAGE_MODEL_PATH` | Checkpoint ảnh hai lớp tương thích ResNet18 hoặc ConvNeXt-Tiny. Nếu không đặt, hệ thống ưu tiên `image-service/detector.pt`, sau đó `backend/models/detector.pt`. | Tự phát hiện checkpoint hiện có |
 | `OLLAMA_HOST` | Địa chỉ Ollama. | `http://localhost:11434` |
 | `DEEPGUARD_AGENT_MODEL` | Ollama model dùng cho Agent và fact-check. | `qwen2.5:3b` |
 
@@ -135,13 +128,14 @@ Model fake/real cũ có thể chấm điểm sai tin thuộc miền khác. Chỉ
 
 Điểm số là tín hiệu sàng lọc, không phải xác suất đã hiệu chuẩn cho mọi miền văn bản. Kết quả fact-check dựa trên luận điểm trích xuất và snippets; hãy mở nguồn để kiểm tra ngữ cảnh đầy đủ.
 
-## Sử dụng Dashboard
+## Sử dụng Dashboard 3.0
 
-- Chọn một trong ba bài mẫu: phishing, tin y tế giật gân hoặc tin hành chính chính thống; hoặc dán nội dung của bạn.
-- Bật/tắt fact-check web nếu cần. Fact-check cần backend kết nối được Ollama và search provider; nếu không, xem thông báo lỗi trả về.
-- Kết quả gồm rủi ro toàn bài, rủi ro theo đoạn, style/fraud/factuality, cụm từ được highlight, claims và nguồn đối chiếu.
-- Dòng “Thành phần đã chạy” chỉ ra model/embedding/fact-check nào thực sự tham gia. Danh sách rỗng nghĩa là chưa có thành phần AI tùy chọn hoạt động.
-- Chế độ ảnh/âm thanh hiện chỉ là prototype. Detector chưa giải mã pixel hoặc waveform; mô tả trong các bài mẫu UI không phải bằng chứng detector đã phát hiện các đặc trưng đó.
+- Chọn chế độ **Văn bản**, **Hình ảnh** hoặc **Âm thanh** từ thanh điều hướng.
+- Chế độ văn bản cho phép chọn bài mẫu có sẵn hoặc dán tiêu đề/nội dung tự chọn. Tùy chọn fact-check bật pipeline trích luận điểm, tìm nguồn và Ollama; kết quả hiển thị rủi ro toàn bài/theo đoạn, style/fraud/factuality, cụm từ được highlight, claims và nguồn đối chiếu.
+- Chế độ hình ảnh nhận `JPG`, `JPEG`, `PNG`, `WEBP`, `BMP`. API đọc nội dung ảnh, chạy checkpoint ResNet18/ConvNeXt hiện có, quét patches và phân tích màu/tần số/metadata. Kết quả có điểm rủi ro, nhãn, bằng chứng và hai khối XAI: heatmap Grad-CAM và ảnh có vùng/bounding box đáng ngờ khi có dữ liệu phù hợp.
+- Chế độ âm thanh hiện nhận tệp tải lên và gọi API, nhưng chưa có model deepfake giọng nói hay phân tích waveform thực. Điểm/kết luận chỉ mang tính heuristic theo kích thước và metadata file, không được dùng làm bằng chứng voice clone.
+- Nút “Bắt đầu phân tích” gửi tệp/nội dung thật tới backend. Không còn tạo kết quả giả, bài mẫu media hoặc trạng thái mô phỏng khi người dùng tải tệp.
+- “Detector” trong kết quả cho biết implementation thực sự tham gia xử lý. Khi model tùy chọn chưa nạp, Dashboard vẫn có thể hiển thị kết quả dựa trên heuristic/luật thay vì báo thành phần đó đang chạy.
 
 ## REST API
 
@@ -203,26 +197,10 @@ Ví dụ: `Hãy phân tích: "Tài khoản sẽ bị khóa, hãy gửi mã OTP."
 
 Dataset nằm ở `data/language/`:
 
-<<<<<<< HEAD
 - `raw/vifactcheck/`: Parquet gốc của ViFactCheck (MIT).
 - `raw/viwikifc/`: CSV gốc của ViWikiFC (CC-BY-4.0, cần ghi công).
 - `processed/claims_{train,val,test}.csv`: claim/evidence/context với nhãn `SUPPORTED`, `REFUTED`, `NEI`; phù hợp cho nghiên cứu fact-check/NLI, không phải nhãn scam/phishing.
 - `processed/news_{train,val,test}.csv`: fake/real từ Fake_news_data; hiện khoảng 1.178 mẫu theo manifest, chưa đủ để fine-tune PhoBERT quy mô lớn và cần xác nhận quyền sử dụng dữ liệu.
-=======
-- `frontend/`: Ứng dụng Web Dashboard xây dựng bằng **React + TypeScript + Vite**, giao diện Dark Theme hiện đại.
-- `backend/app/main.py`: FastAPI server cung cấp REST API và phục vụ giao diện tĩnh.
-- `backend/app/services/article_analyzer.py`: Phân đoạn bài báo, điều phối mô hình NLP, luật ngôn ngữ và fact-checking.
-- `backend/app/detectors/language/`:
-  - `model.py`: Nạp mô hình học máy (`vietnam_fake_news_risk_v3.joblib`).
-  - `heuristics.py`: Bộ quy tắc tách tín hiệu hình thức (giật gân, câu view, thuyết âm mưu) và lừa đảo.
-  - `domains.py`: Phát hiện tên miền giả mạo ngân hàng/ví bằng Levenshtein + chuẩn hóa ký tự dễ nhầm.
-  - `style_classifier.py`: Phân loại giật gân/lừa đảo theo ngữ cảnh bằng embedding tiếng Việt (tùy chọn, `requirements-ml.txt`).
-- `backend/app/services/risk_fusion.py`: Tách và kết hợp 3 trục rủi ro: Hình thức (style), Lừa đảo (fraud), Sự thật (factuality).
-- `backend/app/services/fact_checking.py`: RAG fact-check: tìm kiếm, xếp hạng snippet bằng cosine similarity, LLM đánh giá; báo cáo lưu vào SQLite (`/api/fact-checks`).
-- `backend/data/models/`: Chứa các mô hình học máy đã huấn luyện.
-- `backend/app/detectors/image/`: Detector ảnh ConvNeXt-Tiny và phân tích màu sắc; checkpoint tương thích với kiến trúc ConvNeXt được đặt tại `backend/models/detector.pt`.
-- `backend/tests/`: Bộ kiểm thử tự động pytest.
->>>>>>> origin/image-detector
 
 Trong bản dữ liệu hiện tại, claims có 21.862 mẫu train, 3.000 validation, 2.932 test; từng record có evidence và URL. Lưu ý manifest hiện ghi nguồn `fake_news_data` trong khi claims CSV chứa `vifactcheck` và `viwikifc`; chạy lại pipeline để đồng bộ manifest trước khi trích dẫn thống kê hoặc tái tạo dataset.
 
@@ -348,8 +326,9 @@ flowchart LR
 1. **Phân tích bài viết trên Dashboard:** React gửi `POST /api/analyze/article`. `ArticleAnalyzer` chuẩn hóa và chia đoạn, chạy rules và các classifier khả dụng, có thể gọi FactChecker nếu `check_facts=true`, sau đó tổng hợp kết quả và spans để hiển thị. Báo cáo fact-check được lưu trong SQLite.
 2. **Phân tích text API:** `POST /api/analyze/text` đi qua `DetectorOrchestrator` đến `LanguageDetector`; kết quả phân tích được lưu vào bảng analyses. Đây là API khác với luồng article theo đoạn.
 3. **Fact-check:** `FactChecker` trích xuất luận điểm, tìm kiếm nguồn bên ngoài, xếp hạng snippets theo độ liên quan rồi yêu cầu Ollama đánh giá. Search result/snippet không thay thế việc đọc bài gốc.
-4. **PhoBERT và Local RAG:** PhoBERT bổ sung fraud score; Local RAG truy xuất top-3 đoạn từ corpus được cấu hình rồi dùng NLI để chấm factuality. Thiếu model/corpus thì các nhánh này không chạy và không tạo score giả.
-5. **Ảnh/âm thanh:** request upload được chuyển tới detector tương ứng. Hiện đây là prototype dùng thông tin file/kích thước, chưa phải mô hình phân tích nội dung deepfake.
+4. **PhoBERT và Local RAG:** PhoBERT ONNX bổ sung fraud score cho toàn câu. Local RAG truy xuất top-3 đoạn từ corpus JSONL, dùng embedding/FAISS và NLI ONNX để chấm entailment/contradiction/factuality. Thiếu model/corpus thì các nhánh này không chạy và không tạo score giả.
+5. **Ảnh:** `ImageDetector` nạp ResNet18 hoặc ConvNeXt-Tiny hai lớp, chấm điểm toàn ảnh và các patch, kết hợp color/EXIF/frequency multi-signal rồi sinh Grad-CAM. Checkpoint được ưu tiên từ `DEEPGUARD_IMAGE_MODEL_PATH`, `image-service/detector.pt`, sau đó `backend/models/detector.pt`.
+6. **Âm thanh:** `AudioDetector` kiểm tra kích thước và metadata file cơ bản. Đây không phải detector voice-cloning/deepfake; kết quả không nên được báo là “AI voice phát hiện” bằng mô hình chuyên sâu.
 6. **Agent CLI:** Ollama hội thoại với người dùng và gọi các tool phân tích, fact-check, phân tích media hoặc truy vấn lịch sử. Agent dùng detector/service backend, không phải một bộ phân loại riêng.
 
 ### Các trục rủi ro
@@ -539,6 +518,8 @@ article_fraud = max(paragraph_fraud)
 - `backend/app/services/article_analyzer.py`: điều phối phân tích bài theo đoạn và tổng hợp kết quả article.
 - `backend/app/services/orchestrator.py`: điều phối text, image và audio detector.
 - `backend/app/detectors/language/`: preprocessing NFC/tokenization, heuristics, domain checks, classifier, PhoBERT ONNX và scripts train.
+- `backend/app/detectors/image/`: nạp checkpoint ResNet18/ConvNeXt-Tiny, quét patch, phân tích multi-signal và sinh Grad-CAM/XAI.
+- `backend/app/detectors/audio/`: kiểm tra metadata/kích thước file; chưa có mô hình phân tích speech/deepfake thực.
 - `backend/app/services/risk_fusion.py`: hợp nhất style/fraud/factuality và gán nhãn rủi ro.
 - `backend/app/services/fact_checking.py` và `local_rag.py`: fact-check dựa trên search web và Local RAG/NLI tùy chọn.
 - `backend/app/db/` và `backend/migrations/`: SQLite store và schema migrations.
@@ -552,8 +533,8 @@ backend/
   app/api/routes/health.py       health/version
   app/agent/                     Ollama CLI và tools
   app/detectors/language/        preprocessing, rules, domains, classifiers, training
-  app/detectors/image/           image heuristic prototype
-  app/detectors/audio/           audio heuristic prototype
+  app/detectors/image/           ResNet18/ConvNeXt + patch/color/EXIF/frequency + Grad-CAM XAI
+  app/detectors/audio/           size/metadata heuristic; chưa tích hợp model voice/deepfake
   app/services/                  article analyzer, fact-check, fusion, local RAG
   app/db/                        SQLite store và migrations
   tests/                         pytest suite
@@ -593,6 +574,8 @@ npm run build
 - Dashboard không gọi được API: giữ backend ở cổng 8000; Vite proxy `/api` trong `frontend/vite.config.ts` đang trỏ tới đó.
 - Fact-check báo lỗi kết nối/model: kiểm tra Ollama đang chạy, model đã `ollama pull`, và giá trị `OLLAMA_HOST`/`DEEPGUARD_AGENT_MODEL`.
 - Không thấy PhoBERT/RAG trong “Thành phần đã chạy”: cần weights/corpus tương ứng và biến môi trường. Repo không tải sẵn các artifacts này.
+- Phân tích ảnh báo `checkpoint not found`: đặt `DEEPGUARD_IMAGE_MODEL_PATH` tới checkpoint hai lớp hợp lệ hoặc đặt file vào `image-service/detector.pt`; backend hỗ trợ ResNet18 và ConvNeXt-Tiny.
+- Kết quả âm thanh không có `deepfake` chuyên sâu: đây là giới hạn hiện tại của `audio-heuristic-v1`, không phải lỗi cấu hình model. Cần tích hợp model speech/deepfake riêng trước khi sử dụng kết luận production.
 - Cổng bị chiếm: dừng server bằng `Ctrl+C`; chỉ dùng `Stop-Process` nếu đã xác định đúng PID.
 
 ## Tài liệu chi tiết
