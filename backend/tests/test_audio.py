@@ -46,6 +46,20 @@ def test_invalid_audio(tmp_path):
         load_audio(path)
 
 
+def test_web_lfcc_matches_training_features(tmp_path):
+    from app.detectors.audio.lfcc import extract_features
+    from experiments.audio_asvspoof.run_experiment import features as training_features
+
+    path = tmp_path / 'mono16k.wav'
+    t = np.arange(16000 * 2, dtype=np.float32) / 16000
+    sf.write(path, .3 * np.sin(2 * np.pi * 310 * t), 16000)
+    expected, _ = training_features(path)
+    actual, duration, _ = extract_features(path)
+    assert actual.shape == expected.shape == (120,)
+    assert duration == pytest.approx(2.0)
+    assert np.allclose(actual, expected, atol=1e-7)
+
+
 def test_cam_is_class_dependent_and_zero_safe():
     model = AudioCNN().eval()
     with torch.no_grad():
@@ -89,7 +103,7 @@ def test_audio_api_missing_model_and_upload_cleanup(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import app.main as main
     monkeypatch.setattr(main, 'upload_dir', tmp_path)
-    monkeypatch.setenv('DEEPGUARD_AUDIO_MODEL', str(tmp_path / 'absent.pt'))
+    monkeypatch.setenv('DEEPGUARD_AUDIO_MODEL_PATH', str(tmp_path / 'absent.joblib'))
     client = TestClient(main.app)
     response = client.post('/api/analyze/media', data={'modality': 'Audio'},
                            files={'file': ('../../escape.wav', b'invalid', 'audio/wav')})
@@ -102,10 +116,14 @@ def test_audio_api_and_storage(tone, tmp_path, monkeypatch):
     import app.main as main
     from app.db.store import AnalysisStore
     from app.detectors.audio.audio_detector import AudioDetector
-    checkpoint = tmp_path / 'model.pt'
-    torch.save(dict(architecture='audio-cnn-v1', config=CONFIG, classes=['real', 'fake'],
-                    threshold=.5, state_dict=AudioCNN().state_dict()), checkpoint)
-    monkeypatch.setenv('DEEPGUARD_AUDIO_MODEL', str(checkpoint))
+    from app.detectors.audio.lfcc import FEATURE_VERSION
+    from joblib import dump
+    from sklearn.dummy import DummyClassifier
+    checkpoint = tmp_path / 'model.joblib'
+    model = DummyClassifier(strategy='prior').fit(np.zeros((2, 120)), np.array([0, 1]))
+    dump(dict(model=model, threshold=.5, feature_version=FEATURE_VERSION,
+              labels={0: 'bonafide', 1: 'spoof'}), checkpoint)
+    monkeypatch.setenv('DEEPGUARD_AUDIO_MODEL_PATH', str(checkpoint))
     monkeypatch.setattr(main.orchestrator, 'audio_detector', AudioDetector())
     monkeypatch.setattr(main, 'store', AnalysisStore(str(tmp_path / 'test.db')))
     client = TestClient(main.app)
@@ -115,7 +133,10 @@ def test_audio_api_and_storage(tone, tmp_path, monkeypatch):
         assert response.status_code == 200, response.text
         body = response.json()
         saved = client.get('/api/analyses/' + body['analysisId']).json()
-        assert saved['audio']['xaiPngBase64'] == body['audio']['xaiPngBase64']
+        assert saved['audioXai'] == body['audioXai']
+        assert body['audioScore'] == pytest.approx(.5)
+        assert len(body['audioXai']['attribution']) == 10
+        assert len(body['audioXai']['attribution'][0]) == 12
     response = client.post('/api/analyze/media', data={'modality': 'Audio'},
                            files={'file': ('bad.wav', b'invalid', 'audio/wav')})
     assert response.status_code == 422

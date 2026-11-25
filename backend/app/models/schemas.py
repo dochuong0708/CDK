@@ -17,6 +17,10 @@ class Analysis(AnalysisResult):
     input: str
     createdAt: datetime
     audio: dict | None = None
+    audioScore: float | None = None
+    audioThreshold: float | None = None
+    audioLatencyMs: float | None = None
+    audioXai: dict | None = None
 class AnalysisList(BaseModel):
     items: list[Analysis]
     total: int

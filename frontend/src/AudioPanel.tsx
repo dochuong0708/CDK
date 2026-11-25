@@ -1,6 +1,51 @@
 import { useState } from 'react';
 import { api } from './api';
-import type { Analysis } from './types';
+import type { Analysis, AudioXai } from './types';
+
+type HeatmapKind = 'spectrogram' | 'attribution';
+
+function heatColor(value: number, scale: number, kind: HeatmapKind) {
+  const amount = Math.max(0, Math.min(1, kind === 'attribution' ? Math.abs(value) / Math.max(scale, 1e-8) : value));
+  if (kind === 'attribution') {
+    const target = value >= 0 ? [190, 45, 54] : [42, 105, 190];
+    const rgb = target.map(channel => Math.round(255 + (channel - 255) * amount));
+    return `rgb(${rgb.join(',')})`;
+  }
+  const rgb = [28 + 196 * amount, 58 + 150 * amount, 102 + 140 * amount].map(Math.round);
+  return `rgb(${rgb.join(',')})`;
+}
+
+function AudioHeatmap({ values, scale, kind, label }: {
+  values: number[][];
+  scale: number;
+  kind: HeatmapKind;
+  label: string;
+}) {
+  const rows = values.length;
+  const columns = values[0]?.length ?? 0;
+  if (!rows || !columns) return <p>Không có dữ liệu bản đồ.</p>;
+  return <svg className="audio-heatmap" viewBox={`0 0 ${columns} ${rows}`} role="img" aria-label={label}>
+    {values.flatMap((row, rowIndex) => row.map((value, columnIndex) =>
+      <rect key={`${rowIndex}-${columnIndex}`} x={columnIndex} y={rows - rowIndex - 1}
+        width="1.02" height="1.02" fill={heatColor(value, scale, kind)}>
+        <title>{`Dải ${rowIndex + 1}, khung ${columnIndex + 1}: ${value.toFixed(3)}`}</title>
+      </rect>))}
+  </svg>;
+}
+
+function AudioExplanation({ xai }: { xai: AudioXai }) {
+  return <div className="audio-xai-results">
+    <figure>
+      <figcaption>Phổ log filter-bank · trục ngang: thời gian, trục dọc: dải tần</figcaption>
+      <AudioHeatmap values={xai.spectrogram} scale={1} kind="spectrogram" label="Phổ log filter-bank theo thời gian và dải tần" />
+    </figure>
+    <figure>
+      <figcaption>Occlusion · đỏ: vùng ủng hộ spoof; xanh: vùng làm điểm spoof tăng khi bị che</figcaption>
+      <AudioHeatmap values={xai.attribution} scale={xai.attributionScale} kind="attribution" label="Bản đồ attribution occlusion theo thời gian và dải tần" />
+    </figure>
+    <p className="audio-xai-note">{xai.note} {xai.attributionMeaning}</p>
+  </div>;
+}
 
 export function AudioPanel() {
   const [file, setFile] = useState<File>();
@@ -15,9 +60,9 @@ export function AudioPanel() {
     finally { setBusy(false); }
   }
   return <section id="audio-workspace" className="panel audio-panel" aria-labelledby="audio-title">
-    <p className="eyebrow">AUDIO AI · MEL-SPECTROGRAM + GRAD-CAM</p>
+    <p className="eyebrow">AUDIO AI · LFCC + EXTRA TREES + OCCLUSION XAI</p>
     <h2 id="audio-title">Phân loại giọng nói thật / giả</h2>
-    <p>Tải giọng nói WAV, FLAC hoặc OGG, từ 0,5 đến 60 giây, tối đa 20 MB. Cần mô hình đã huấn luyện trên máy chủ.</p>
+    <p>Tải giọng nói WAV, FLAC hoặc OGG, từ 0,5 đến 60 giây, tối đa 20 MB. Cần model Extra Trees đã được huấn luyện trên máy chủ.</p>
     <label htmlFor="audio-file">Chọn tệp âm thanh</label>
     <input id="audio-file" type="file" accept=".wav,.flac,.ogg" disabled={busy}
       onChange={e => { setFile(e.target.files?.[0]); setResult(undefined); setError(''); }} />
@@ -25,19 +70,14 @@ export function AudioPanel() {
       {busy ? 'Đang phân tích và tạo XAI…' : 'Phân tích giọng nói'}
     </button>
     {error && <p role="alert" className="validation">{error}</p>}
-    {result?.audio && <div aria-live="polite">
+    {result && <div aria-live="polite">
       <h3>{result.label}</h3>
-      <p>Điểm lớp giả: <b>{(result.audio.fakeScore * 100).toFixed(1)}%</b> · Ngưỡng: {(result.audio.threshold * 100).toFixed(1)}%</p>
-      <p>Đây là điểm mô hình chưa hiệu chỉnh, không phải xác suất xác thực. Grad-CAM giải thích lớp “giả” tại cửa sổ có điểm giả cao nhất, không xác định chắc chắn vị trí giả mạo.</p>
-      <img className="audio-xai" src={`data:image/png;base64,${result.audio.xaiPngBase64}`}
-        alt="Waveform toàn file, phổ Mel và Grad-CAM của cửa sổ có điểm giả cao nhất" />
-      <a download="deepguard-audio-xai.png" href={`data:image/png;base64,${result.audio.xaiPngBase64}`}>Tải đồ thị XAI</a>
-      <table><thead><tr><th>Cửa sổ (giây)</th><th>Điểm lớp giả</th><th>Giải thích</th></tr></thead>
-        <tbody>{result.audio.windows.map((window, index) => <tr key={window.start}>
-          <td>{window.start.toFixed(2)} – {window.end.toFixed(2)}</td>
-          <td>{(window.fakeScore * 100).toFixed(1)}%</td>
-          <td>{index === result.audio?.explainedWindow ? 'Được hiển thị trong Grad-CAM' : ''}</td>
-        </tr>)}</tbody></table>
+      <p>Điểm spoof: <b>{((result.audioScore ?? result.riskScore / 100) * 100).toFixed(1)}%</b>
+        {result.audioThreshold != null && <> · Ngưỡng: {(result.audioThreshold * 100).toFixed(1)}%</>}
+        {result.audioLatencyMs != null && <> · Thời gian: {result.audioLatencyMs.toFixed(1)} ms</>}</p>
+      <p>Điểm Extra Trees chưa được hiệu chuẩn thành xác suất. Kết quả là sàng lọc tham khảo, không tự khẳng định nguồn gốc giọng nói.</p>
+      {result.audioXai && <AudioExplanation xai={result.audioXai} />}
+      {!result.audioXai && <p>Phản hồi không có dữ liệu XAI âm thanh.</p>}
     </div>}
   </section>;
 }
