@@ -32,14 +32,24 @@ class AnalysisStore:
                 item.createdAt.isoformat(),
             ),
         )
-        if item.audio is not None:
-            self.connection.execute('INSERT INTO audio_details VALUES (?, ?)',
-                                    (item.analysisId, json.dumps(item.audio)))
+        audio_payload = item.model_dump(
+            include={'audio', 'audioScore', 'audioThreshold', 'audioLatencyMs', 'audioXai'},
+            exclude_none=True,
+        )
+        if audio_payload:
+            self.connection.execute(
+                'INSERT INTO audio_details VALUES (?, ?)',
+                (item.analysisId, json.dumps(audio_payload, ensure_ascii=False)),
+            )
         self.connection.commit()
         return item
 
     def list(self, modality: str | None = None, risk: int | None = None) -> list[Analysis]:
-        query = 'SELECT * FROM analyses WHERE 1 = 1'
+        query = (
+            'SELECT analyses.*, audio_details.payload FROM analyses '
+            'LEFT JOIN audio_details ON analyses.analysis_id = audio_details.analysis_id '
+            'WHERE 1 = 1'
+        )
         parameters: list[str | int] = []
         if modality:
             query += ' AND modality = ?'
@@ -52,19 +62,17 @@ class AnalysisStore:
 
     def get(self, analysis_id: str) -> Analysis | None:
         row = self.connection.execute(
-            'SELECT * FROM analyses WHERE analysis_id = ?', (analysis_id,)
+            'SELECT analyses.*, audio_details.payload FROM analyses '
+            'LEFT JOIN audio_details ON analyses.analysis_id = audio_details.analysis_id '
+            'WHERE analyses.analysis_id = ?', (analysis_id,)
         ).fetchone()
         if not row:
             return None
-        item = self._from_row(row)
-        detail = self.connection.execute('SELECT payload FROM audio_details WHERE analysis_id = ?', (analysis_id,)).fetchone()
-        if detail:
-            item.audio = json.loads(detail[0])
-        return item
+        return self._from_row(row)
 
     @staticmethod
     def _from_row(row: tuple) -> Analysis:
-        return Analysis(
+        item = Analysis(
             analysisId=row[0],
             modality=row[1],
             label=row[2],
@@ -75,3 +83,6 @@ class AnalysisStore:
             input=row[7],
             createdAt=row[8],
         )
+        if len(row) > 9 and row[9]:
+            return Analysis.model_validate({**item.model_dump(), **json.loads(row[9])})
+        return item

@@ -137,6 +137,9 @@ def test_audio_api_and_storage(tone, tmp_path, monkeypatch):
         assert body['audioScore'] == pytest.approx(.5)
         assert len(body['audioXai']['attribution']) == 10
         assert len(body['audioXai']['attribution'][0]) == 12
+        listed = client.get('/api/analyses', params={'modality': 'Audio'}).json()
+        saved_from_list = next(item for item in listed['items'] if item['analysisId'] == body['analysisId'])
+        assert saved_from_list['audioXai'] == body['audioXai']
     response = client.post('/api/analyze/media', data={'modality': 'Audio'},
                            files={'file': ('bad.wav', b'invalid', 'audio/wav')})
     assert response.status_code == 422
